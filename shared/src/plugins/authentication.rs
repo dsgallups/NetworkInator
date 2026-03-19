@@ -18,26 +18,26 @@ pub struct SeasonInfos{
 }
 
 #[derive(Resource,Default)]
-pub struct AuthenticatedSessions(HashMap<Uuid,SeasonInfos>,HashMap<Uuid,Uuid>);
+struct AuthenticatedSessions(HashMap<Uuid,SeasonInfos>,HashMap<Uuid,Uuid>);
 
 #[derive(Serialize,Deserialize,ConnectionMessage)]
 #[connection_message(authentication = true)]
-pub struct AuthenticationMessage{
+struct AuthenticationMessage{
     pub first_join: bool,
     pub session_uuid: Option<Uuid>,
 }
 
 #[derive(Serialize,Deserialize,ConnectionMessage)]
 #[connection_message(authentication = true)]
-pub struct AuthenticatePort{
+struct AuthenticatePort{
     pub session_uuid: Uuid
 }
 
 #[derive(Serialize,Deserialize,ConnectionMessage)]
-pub struct AuthenticatedMessage(Uuid,Uuid);
+struct AuthenticatedMessage(Uuid,Uuid);
 
 #[derive(Serialize,Deserialize,ConnectionMessage)]
-pub struct PortAuthenticated;
+struct PortAuthenticated;
 
 #[derive(Resource,Default)]
 pub struct LocalSeasonUUID(Uuid);
@@ -89,7 +89,7 @@ impl Plugin for AuthenticationPlugin {
     }
 }
 
-pub fn check_seasons_ended(
+fn check_seasons_ended(
     network_connection: NetRes<NetworkConnection<ServerConnection>>,
     mut authenticated_sessions: NetResMut<AuthenticatedSessions>,
     time: NetRes<Time>
@@ -124,7 +124,7 @@ pub fn check_seasons_ended(
     });
 }
 
-pub fn authenticate_ports(
+fn authenticate_ports(
     mut message_received_from_client: MessageReader<MessageReceivedFromClient<AuthenticatePort>>,
     mut authenticated_sessions: NetResMut<AuthenticatedSessions>,
     mut network_connection: NetResMut<NetworkConnection<ServerConnection>>,
@@ -155,7 +155,7 @@ pub fn authenticate_ports(
     }
 }
 
-pub fn check_peer_authenticating(
+fn check_peer_authenticating(
     mut message_received_from_client: MessageReader<MessageReceivedFromClient<AuthenticationMessage>>,
     mut network_connection: NetResMut<NetworkConnection<ServerConnection>>,
     mut peer_authenticated: MessageWriter<PeerAuthenticated>,
@@ -252,7 +252,7 @@ pub fn check_peer_authenticating(
     }
 }
 
-pub fn authenticate(
+fn authenticate(
     mut network_connection: NetResMut<NetworkConnection<ClientConnection>>,
     local_season_uuid: NetRes<LocalSeasonUUID>,
 ){
@@ -290,7 +290,7 @@ pub fn authenticate(
                         if port.is_port_authenticated() {
                             continue;
                         }
-                        
+
                         let authenticate_port = AuthenticatePort{
                             session_uuid: local_season_uuid.0,
                         };
@@ -303,7 +303,7 @@ pub fn authenticate(
     }
 }
 
-pub fn check_local_peer_and_season_received(
+fn check_local_peer_and_season_received(
     mut authenticated_message: MessageReader<MessageReceivedFromServer<AuthenticatedMessage>>,
     mut local_season_uuid: NetResMut<LocalSeasonUUID>,
     mut local_peer_id: NetResMut<LocalPeerId>,
@@ -326,7 +326,7 @@ pub fn check_local_peer_and_season_received(
     }
 }
 
-pub fn check_client_ports_authenticated(
+fn check_client_ports_authenticated(
     mut port_authenticated_message: MessageReader<MessageReceivedFromServer<PortAuthenticated>>,
     mut network_connection: NetResMut<NetworkConnection<ClientConnection>>,
 ){
