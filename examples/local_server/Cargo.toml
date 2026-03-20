@@ -1,0 +1,10 @@
+[package]
+name = "local_server"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+client = {path = "../../client"}
+shared = {path = "../../shared"}
+server = {path = "../../server"}
+bevy = { workspace = true, features = ["dynamic_linking"]  }

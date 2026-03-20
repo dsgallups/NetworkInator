@@ -40,10 +40,10 @@ struct AuthenticatedMessage(Uuid,Uuid);
 struct PortAuthenticated;
 
 #[derive(Resource,Default)]
-pub struct LocalSeasonUUID(Uuid);
+pub struct LocalSeasonUUID(pub Option<Uuid>);
 
 #[derive(Resource,Default)]
-pub struct LocalPeerId(Uuid);
+pub struct LocalPeerId(pub Option<Uuid>);
 
 #[derive(Message)]
 pub struct Authenticated;
@@ -149,7 +149,7 @@ fn authenticate_ports(
                     }
                 }
 
-                server_connection.send_peer_message::<PortAuthenticated>(Box::new(PortAuthenticated), port_id, session_uuid);
+                server_connection.send_peer_message::<PortAuthenticated>(Box::new(PortAuthenticated), port_id, session_uuid, None);
             }
         }
     }
@@ -162,6 +162,9 @@ fn check_peer_authenticating(
     mut authenticated_sessions: NetResMut<AuthenticatedSessions>,
     time: NetRes<Time>
 ){
+
+    let mut all_authenticated : HashMap<Uuid, (Uuid,u32)> = HashMap::new();
+
     for ev in message_received_from_client.read() {
         let authenticated_message = &ev.message;
 
@@ -169,9 +172,11 @@ fn check_peer_authenticating(
 
         match network_connection.0.get_mut(&ev.connection_id) {
             Some(server_connection) => {
+                let is_authentication_connection = server_connection.is_authentication_connection();
+
                 match server_connection.get_port(ev.port_id) {
                     Some(port) => {
-                        if authenticated_message.first_join {
+                        if authenticated_message.first_join && is_authentication_connection {
                             let peer_uuid = Uuid::new_v4();
                             let mut session_to_use = ev.session_id;
 
@@ -181,16 +186,20 @@ fn check_peer_authenticating(
 
                             if let Some(season_infos) = authenticated_sessions.0.get(&session_to_use) {
                                 if !season_infos.connected {
-                                    authenticated_sessions.0.insert(session_to_use,SeasonInfos{
-                                        peer_id: peer_uuid,
-                                        season_duration: time.elapsed_secs(),
-                                        disconnected_duration: None,
-                                        connected: true,
-                                    });
+                                    if is_authentication_connection {
+                                        authenticated_sessions.0.insert(session_to_use,SeasonInfos{
+                                            peer_id: peer_uuid,
+                                            season_duration: time.elapsed_secs(),
+                                            disconnected_duration: None,
+                                            connected: true,
+                                        });
 
-                                    authenticated_sessions.1.insert(peer_uuid,session_to_use);
-                                    
+                                        authenticated_sessions.1.insert(peer_uuid,session_to_use);
+                                    }
+
                                     if port.authenticate_peer(session_to_use,peer_uuid,None) {
+                                        all_authenticated.insert(session_to_use, (peer_uuid,ev.connection_id));
+
                                         peer_authenticated.write(PeerAuthenticated{
                                             session_uuid: session_to_use,
                                             peer_uuid,
@@ -200,16 +209,20 @@ fn check_peer_authenticating(
                                     };
                                 }
                             }else{
-                                authenticated_sessions.0.insert(session_to_use,SeasonInfos{
-                                    peer_id: peer_uuid,
-                                    season_duration: time.elapsed_secs(),
-                                    disconnected_duration: None,
-                                    connected: true
-                                });
+                                if is_authentication_connection {
+                                    authenticated_sessions.0.insert(session_to_use,SeasonInfos{
+                                        peer_id: peer_uuid,
+                                        season_duration: time.elapsed_secs(),
+                                        disconnected_duration: None,
+                                        connected: true
+                                    });
 
-                                authenticated_sessions.1.insert(peer_uuid,session_to_use);
-                                
+                                    authenticated_sessions.1.insert(peer_uuid,session_to_use);
+                                }
+
                                 if port.authenticate_peer(session_to_use,peer_uuid,None) {
+                                    all_authenticated.insert(session_to_use, (peer_uuid,ev.connection_id));
+
                                     peer_authenticated.write(PeerAuthenticated{
                                         session_uuid: session_to_use,
                                         peer_uuid,
@@ -221,7 +234,7 @@ fn check_peer_authenticating(
 
                             if ev.port_id == 0 {
                                 let authenticated_message = Box::new(AuthenticatedMessage(session_to_use,peer_uuid));
-                                server_connection.send_peer_message::<AuthenticatedMessage>(authenticated_message, 0, &session_to_use);
+                                server_connection.send_peer_message::<AuthenticatedMessage>(authenticated_message, 0, &session_to_use, None);
                             }
                         }else{
                             if let Some(authenticated_session_id) = authenticated_message.session_uuid {
@@ -250,6 +263,12 @@ fn check_peer_authenticating(
             }
         }
     }
+
+    for (season_uuid,(peer_uuid,connection_id)) in all_authenticated.iter() {
+        if let Some(server_connection) = network_connection.0.get_mut(connection_id) {
+            server_connection.peers_connected.insert(*season_uuid, (Some(*peer_uuid), false));
+        }
+    }
 }
 
 fn authenticate(
@@ -259,7 +278,7 @@ fn authenticate(
     for (_,client_connection) in network_connection.0.iter_mut() {
         let mut is_main_port_authenticated = false;
 
-        if local_season_uuid.0.is_nil() {
+        if local_season_uuid.0.is_none() {
             if !client_connection.is_authentication_connection() {
                 continue;
             }
@@ -267,7 +286,7 @@ fn authenticate(
             client_connection.send_server_message::<AuthenticationMessage>(Box::new(AuthenticationMessage{
                 first_join: true,
                 session_uuid: None,
-            }),0)
+            }),0, None)
         }else {
             if let Some(main_port) = client_connection.get_port(0) {
                 if main_port.is_port_authenticated() {
@@ -275,10 +294,10 @@ fn authenticate(
                 }else {
                     let authentication_message = AuthenticationMessage{
                         first_join: true,
-                        session_uuid: Some(local_season_uuid.0),
+                        session_uuid: local_season_uuid.0,
                     };
 
-                    client_connection.send_server_message::<AuthenticationMessage>(Box::new(authentication_message),0);
+                    client_connection.send_server_message::<AuthenticationMessage>(Box::new(authentication_message),0, None);
                 }
             }
 
@@ -292,10 +311,10 @@ fn authenticate(
                         }
 
                         let authenticate_port = AuthenticatePort{
-                            session_uuid: local_season_uuid.0,
+                            session_uuid: local_season_uuid.0.unwrap(),
                         };
 
-                        client_connection.send_server_message::<AuthenticatePort>(Box::new(authenticate_port),port_id);
+                        client_connection.send_server_message::<AuthenticatePort>(Box::new(authenticate_port),port_id, None);
                     }
                 }
             }
@@ -313,8 +332,8 @@ fn check_local_peer_and_season_received(
     for ev in authenticated_message.read() {
         let authenticated_message = &ev.message;
 
-        local_season_uuid.0 = authenticated_message.0;
-        local_peer_id.0 = authenticated_message.1;
+        local_season_uuid.0 = Some(authenticated_message.0);
+        local_peer_id.0 = Some(authenticated_message.1);
 
         if let Some(client_connection) = network_connection.0.get_mut(&ev.connection_id){
             if let Some(port) = client_connection.get_port(ev.port_id) {

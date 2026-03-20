@@ -10,7 +10,7 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 use tokio::sync::{Mutex, OwnedSemaphorePermit, Semaphore};
-use shared::plugins::network::{PortInfosTrait, ServerConnectionSharedValues, ServerPort, ServerSettingsPort};
+use shared::plugins::network::{PortInfosTrait, PortSendType, SendMessageArgs, ServerConnectionSharedValues, ServerPort, ServerSettingsPort};
 use uuid::{Uuid};
 use shared::plugins::messaging::{MessageInfos, MessageTrait};
 use shared::port_systems::read_writer_tcp::{read_from_settings, read_value_to_usize, value_from_number, write_from_settings, BytesOptions, OrderOptions};
@@ -712,11 +712,11 @@ impl ServerPort for TcpPortServer{
         false
     }
 
-    fn send_message_for_peer(&mut self, server_connection_shared_values: &ServerConnectionSharedValues, season_uuid: &Uuid, message: &dyn MessageTrait, message_id: u32) {
+    fn send_message_for_peer(&mut self, server_connection_shared_values: &ServerConnectionSharedValues, season_uuid: &Uuid, message: &dyn MessageTrait, message_id: u32, send_message_args: Option<Box<dyn SendMessageArgs>>) {
         if let Some(_) = self.anonymous_peers_connected.get_mut(&season_uuid) {
-            self.send_message_for_anonymous_peer(server_connection_shared_values, season_uuid, message, message_id);
+            self.send_message_for_anonymous_peer(server_connection_shared_values, season_uuid, message, message_id, send_message_args);
         }else if let Some(_) = self.peers_authenticated.get_mut(&season_uuid) {
-            self.send_message_for_authenticated_peer(server_connection_shared_values, season_uuid, message, message_id);
+            self.send_message_for_authenticated_peer(server_connection_shared_values, season_uuid, message, message_id, send_message_args);
         }
     }
 
@@ -747,10 +747,14 @@ impl ServerPort for TcpPortServer{
     fn is_main_port(&self) -> bool {
         self.main_port
     }
+
+    fn get_port_send_type(&self) -> &PortSendType {
+        &PortSendType::Reliable
+    }
 }
 
 impl TcpPortServer {
-    fn send_message_for_anonymous_peer(&mut self, server_connection_shared_values: &ServerConnectionSharedValues, season_uuid: &Uuid, message: &dyn MessageTrait, message_id: u32) {
+    fn send_message_for_anonymous_peer(&mut self, server_connection_shared_values: &ServerConnectionSharedValues, season_uuid: &Uuid, message: &dyn MessageTrait, message_id: u32, _: Option<Box<dyn SendMessageArgs>>) {
         if let Some(runtime) = server_connection_shared_values.get_runtime(){
             let peer_anonymous = self.anonymous_peers_connected.get_mut(season_uuid);
 
@@ -799,7 +803,7 @@ impl TcpPortServer {
         }
     }
 
-    fn send_message_for_authenticated_peer(&mut self, server_connection_shared_values: &ServerConnectionSharedValues, season_uuid: &Uuid, message: &dyn MessageTrait, message_id: u32) {
+    fn send_message_for_authenticated_peer(&mut self, server_connection_shared_values: &ServerConnectionSharedValues, season_uuid: &Uuid, message: &dyn MessageTrait, message_id: u32, _: Option<Box<dyn SendMessageArgs>>) {
         if let Some(runtime) = server_connection_shared_values.get_runtime(){
             let peer_authenticated = self.peers_authenticated.get_mut(season_uuid);
 

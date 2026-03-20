@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["client", "examples/dedicated_server/client_dedicated_test", "examples/dedicated_server/server_dedicated_test", "message_pro_macro","server", "shared"]
+members = ["client", "examples/dedicated_server/client_dedicated_test", "examples/dedicated_server/server_dedicated_test", "examples/local_server", "message_pro_macro","server", "shared"]
 
 [workspace.package]
 version = "0.1.0"

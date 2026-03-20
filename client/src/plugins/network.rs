@@ -4,7 +4,7 @@ use bevy::log::error;
 use bevy::prelude::{IntoScheduleConfigs, Message, MessageWriter, Plugin, Time};
 use shared::{NetRes, NetResMut};
 use shared::plugins::messaging::MessagingPlugin;
-use shared::plugins::network::{ClientConnection, CurrentNetworkSides, NetworkConnection, NetworkType};
+use shared::plugins::network::{ClientConnection, CurrentNetworkSides, NetworkConnection, NetworkType, ServerConnection};
 
 pub struct ClientNetworkPlugin;
 
@@ -56,9 +56,16 @@ impl Plugin for ClientNetworkPlugin{
 
 pub fn start_ports(
     mut network_connection: NetResMut<NetworkConnection<ClientConnection>>,
+    server_network_connection: Option<NetRes<NetworkConnection<ServerConnection>>>,
     time: NetRes<Time>
 ){
-    for (_,client_connection) in &mut network_connection.0 {
+    for (connection_id,client_connection) in &mut network_connection.0 {
+        if let Some(server_network_connection) = server_network_connection.as_ref() {
+            if let Some(_) = server_network_connection.0.get(connection_id) {
+                continue;
+            }
+        }
+
         if let (Some(main_port),client_connection_shared_values) = client_connection.get_port_split(&0) {
             main_port.start(client_connection_shared_values, &time);
         }

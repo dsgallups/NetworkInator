@@ -9,7 +9,7 @@ use tokio::net::TcpStream;
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 use tokio::sync::Mutex;
 use shared::plugins::messaging::{MessageInfos, MessageTrait};
-use shared::plugins::network::{ClientConnectionSharedValues, ClientPort, ClientSettingsPort, PortInfosTrait};
+use shared::plugins::network::{ClientConnectionSharedValues, ClientPort, ClientSettingsPort, PortInfosTrait, PortSendType, SendMessageArgs};
 use shared::port_systems::read_writer_tcp::{read_from_settings, read_value_to_usize, value_from_number, write_from_settings, BytesOptions, OrderOptions};
 
 pub struct TcpInfosClient;
@@ -329,7 +329,7 @@ impl ClientPort for TcpPortClient {
         &TcpInfosClient
     }
 
-    fn send_message_for_server(&mut self, client_connection_shared_values: &ClientConnectionSharedValues, message: &dyn MessageTrait, message_id: u32) {
+    fn send_message_for_server(&mut self, client_connection_shared_values: &ClientConnectionSharedValues, message: &dyn MessageTrait, message_id: u32, _: Option<Box<dyn SendMessageArgs>>) {
         if let Some(runtime) = client_connection_shared_values.get_runtime(){
             if let Some(owned_write_half) = &self.owned_write_half {
                 let owned_write_half = Arc::clone(owned_write_half);
@@ -401,5 +401,9 @@ impl ClientPort for TcpPortClient {
 
     fn is_main_port(&self) -> bool {
         self.main_port
+    }
+
+    fn get_port_send_type(&self) -> &PortSendType {
+        &PortSendType::Reliable
     }
 }

@@ -1,4 +1,4 @@
-use std::any::TypeId;
+use std::any::{Any, TypeId};
 use std::collections::HashMap;
 use std::io::Error;
 use std::sync::Arc;
@@ -30,7 +30,14 @@ pub struct ClientConnectionSharedValues{
     runtime: Option<Runtime>,
 }
 
+pub enum PortSendType{
+    Reliable,
+    Unreliable
+}
+
 pub trait PortInfosTrait{}
+
+pub trait SendMessageArgs: Any{}
 
 pub trait ClientPort: Send + Sync{
     fn start(&mut self, client_connection_shared_values: &ClientConnectionSharedValues, time: &Res<Time>);
@@ -42,11 +49,12 @@ pub trait ClientPort: Send + Sync{
     fn start_listening(&mut self, client_connection_shared_values: &ClientConnectionSharedValues);
     fn get_connecting_status(&self) -> (bool,bool,f32);
     fn get_port_infos(&self) -> &dyn PortInfosTrait;
-    fn send_message_for_server(&mut self, client_connection_shared_values: &ClientConnectionSharedValues, message: &dyn MessageTrait, message_id: u32);
+    fn send_message_for_server(&mut self, client_connection_shared_values: &ClientConnectionSharedValues, message: &dyn MessageTrait, message_id: u32, send_message_args: Option<Box<dyn SendMessageArgs>>);
     fn get_server_messages(&mut self) -> Vec<Vec<u8>>;
     fn is_port_authenticated(&self) -> bool;
     fn set_port_authenticated(&mut self);
     fn is_main_port(&self) -> bool;
+    fn get_port_send_type(&self) -> &PortSendType;
 }
 pub trait ServerPort: Send + Sync{
     fn start(&mut self, server_connection_shared_values: &ServerConnectionSharedValues, time: &Res<Time>);
@@ -64,11 +72,12 @@ pub trait ServerPort: Send + Sync{
     fn start_listening_authenticated_peers(&mut self, server_connection_shared_values: &ServerConnectionSharedValues);
     fn get_peers_messages(&mut self) -> Vec<(Uuid,Option<Uuid>,Vec<u8>)>;
     fn authenticate_peer(&mut self, season_uuid: Uuid, peer_id: Uuid, new_season_uuid: Option<Uuid>) -> bool;
-    fn send_message_for_peer(&mut self, server_connection_shared_values: &ServerConnectionSharedValues, season_uuid: &Uuid, message: &dyn MessageTrait, message_id: u32);
+    fn send_message_for_peer(&mut self, server_connection_shared_values: &ServerConnectionSharedValues, season_uuid: &Uuid, message: &dyn MessageTrait, message_id: u32, send_message_args: Option<Box<dyn SendMessageArgs>>);
     fn is_peer_connected(&self, season_uuid: &Uuid) -> (bool, bool);
     fn get_port_infos(&self) -> &dyn PortInfosTrait;
     fn disconnect_peer(&mut self, season_uuid: &Uuid);
     fn is_main_port(&self) -> bool;
+    fn get_port_send_type(&self) -> &PortSendType;
 }
 
 pub trait ClientSettingsPort{
@@ -93,14 +102,16 @@ pub struct ServerConnection{
     server_connection_shared_values: ServerConnectionSharedValues,
     max_connections: i32,
     disconnect_peer_if_full: bool,
-    semaphore: Option<Arc<Semaphore>>
+    semaphore: Option<Arc<Semaphore>>,
+    pub peers_connected: HashMap<Uuid,(Option<Uuid>,bool)>,
+    is_authentication_connection: bool,
 }
 #[derive(Default)]
 pub struct ClientConnection{
     main_port: Option<Box<dyn ClientPort>>,
     pub secondary_ports: HashMap<u32, Box<dyn ClientPort>>,
     client_connection_shared_values: ClientConnectionSharedValues,
-    is_authentication_connection: bool,
+    is_authentication_connection: bool
 }
 
 #[derive(Resource)]
@@ -205,18 +216,18 @@ impl ClientConnection {
         self.secondary_ports.len() as u32
     }
     
-    pub fn send_server_message<T: MessageTrait>(&mut self, message: Box<dyn MessageTrait>, port_id: u32){
+    pub fn send_server_message<T: MessageTrait>(&mut self, message: Box<dyn MessageTrait>, port_id: u32, send_message_args: Option<Box<dyn SendMessageArgs>>){
         if let (Some(port),client_connection_shared_values) = self.get_port_split(&port_id){
             let type_id = TypeId::of::<T>();
             let registry = MESSAGE_REGISTRY_TYPE_ID.read().unwrap();
             
-            port.send_message_for_server(client_connection_shared_values,message.as_ref(),*registry.get(&type_id).unwrap());
+            port.send_message_for_server(client_connection_shared_values,message.as_ref(),*registry.get(&type_id).unwrap(), send_message_args);
         }
     }
 }
 
 impl ServerConnection {
-    pub fn create_connection(max_connections: i32, disconnect_peer_if_full: bool, settings: Box<dyn ServerSettingsPort>) -> Option<Self> {
+    pub fn create_connection(max_connections: i32, disconnect_peer_if_full: bool, settings: Box<dyn ServerSettingsPort>, is_authentication_connection: bool) -> Option<Self> {
         let mut port = settings.create_port();
 
         if !port.as_main_port(){
@@ -236,9 +247,11 @@ impl ServerConnection {
             server_connection_shared_values: ServerConnectionSharedValues{
                 runtime: Some(Runtime::new().unwrap()),
             },
+            peers_connected: HashMap::new(),
             max_connections,
             disconnect_peer_if_full,
             semaphore,
+            is_authentication_connection
         })
     }
 
@@ -289,16 +302,19 @@ impl ServerConnection {
     pub fn semaphore(&self) -> Option<Arc<Semaphore>> {
         self.semaphore.as_ref().map(Arc::clone)
     }
+    pub fn is_authentication_connection(&self) -> bool{
+        self.is_authentication_connection
+    }
 
     pub fn disconnect_peer_if_full(&self) -> bool {
         self.disconnect_peer_if_full
     }
-    pub fn send_peer_message<T: MessageTrait>(&mut self, message: Box<dyn MessageTrait>, port_id: u32, season_uuid: &Uuid){
+    pub fn send_peer_message<T: MessageTrait>(&mut self, message: Box<dyn MessageTrait>, port_id: u32, season_uuid: &Uuid, send_message_args: Option<Box<dyn SendMessageArgs>>){
         if let (Some(port),server_connection_shared_values ) = self.get_port_split(&port_id){
             let type_id = TypeId::of::<T>();
             let registry = MESSAGE_REGISTRY_TYPE_ID.read().unwrap();
             
-            port.send_message_for_peer(server_connection_shared_values, season_uuid, message.as_ref(),*registry.get(&type_id).unwrap());
+            port.send_message_for_peer(server_connection_shared_values, season_uuid, message.as_ref(),*registry.get(&type_id).unwrap(), send_message_args);
         }
     }
 }
@@ -316,12 +332,12 @@ impl ClientConnectionSharedValues {
 }
 
 impl NetworkConnection<ServerConnection> {
-    pub fn start_connection(&mut self, connection_id: u32, max_connections: i32, disconnect_peer_if_full: bool, settings: Box<dyn ServerSettingsPort>){
+    pub fn start_connection(&mut self, connection_id: u32, max_connections: i32, disconnect_peer_if_full: bool, settings: Box<dyn ServerSettingsPort>, is_authentication_connection: bool){
         if self.0.contains_key(&connection_id){
             return;
         }
 
-        let new_server_connection = ServerConnection::create_connection(max_connections, disconnect_peer_if_full, settings);
+        let new_server_connection = ServerConnection::create_connection(max_connections, disconnect_peer_if_full, settings, is_authentication_connection);
 
         if new_server_connection.is_none() {
             return;

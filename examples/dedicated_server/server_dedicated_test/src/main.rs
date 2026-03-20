@@ -10,7 +10,7 @@ use shared::plugins::network::{NetworkConnection, NetworkPlugin, ServerConnectio
 fn start_connection(
     mut network_connection: NetResMut<NetworkConnection<ServerConnection>>,
 ) {
-    network_connection.start_connection(0, 0, true, Box::new(TcpConfigsServer::default()));
+    network_connection.start_connection(0, 0, true, Box::new(TcpConfigsServer::default()),true);
     network_connection.create_secondary_port(0,1,Box::new(TcpConfigsServer::default().with_port(8081)));
 }
 

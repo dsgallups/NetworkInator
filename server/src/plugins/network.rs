@@ -6,6 +6,7 @@ use bevy::log::{error};
 use bevy::prelude::{First, IntoScheduleConfigs, Message, MessageWriter, Plugin, Time};
 use uuid::Uuid;
 use shared::{NetRes, NetResMut};
+use shared::plugins::authentication::{Authenticated, LocalPeerId, LocalSeasonUUID};
 use shared::plugins::messaging::MessagingPlugin;
 use shared::plugins::network::{CurrentNetworkSides, NetworkConnection, NetworkType, ServerConnection};
 
@@ -68,8 +69,44 @@ impl Plugin for ServerNetworkPlugin {
         app.add_message::<AnonymousPeersAcceptedOnPort>();
         app.add_message::<PeersDroppedServer>();
 
-        app.add_systems(First,(start_ports,check_connected_ports,check_ports_down,start_accepting_ports_connections,check_peers_disconnected,check_ports_peers_accepted,check_peers_queue_accepted,start_listening_peers).chain());
-        
+        app.add_systems(First,(set_local_player_as_connected,start_ports,check_connected_ports,check_ports_down,start_accepting_ports_connections,check_peers_disconnected,check_ports_peers_accepted,check_peers_queue_accepted,start_listening_peers).chain());
+    }
+}
+
+pub fn set_local_player_as_connected(
+    mut current_network_sides: NetResMut<CurrentNetworkSides>,
+    local_season_uuid: Option<NetResMut<LocalSeasonUUID>>,
+    local_peer_id: Option<NetResMut<LocalPeerId>>,
+    authenticated: Option<MessageWriter<Authenticated>>,
+    mut network_connection: NetResMut<NetworkConnection<ServerConnection>>,
+){
+    if !current_network_sides.side().contains(&NetworkType::LocalServer){
+        return;
+    }
+
+    if let Some(mut local_season_uuid) = local_season_uuid {
+        if local_season_uuid.0.is_none() {
+            local_season_uuid.0 = Some(Uuid::new_v4());
+        }
+
+        if let Some(mut local_peer_id) = local_peer_id{
+            if local_peer_id.0.is_none() {
+                local_peer_id.0 = Some(Uuid::new_v4());
+                
+                if let Some(mut authenticated) = authenticated{
+                    authenticated.write(Authenticated);
+                }
+            }
+
+            for (_,server_connection) in network_connection.0.iter_mut(){
+                if server_connection.peers_connected.contains_key(&local_season_uuid.0.unwrap()){
+                    continue;
+                }
+
+                server_connection.peers_connected.insert(local_season_uuid.0.unwrap(),(Some(local_peer_id.0.unwrap()),true));
+            }
+
+        }
     }
 }
 
@@ -189,6 +226,12 @@ pub fn check_peers_disconnected(
         if let Some(main_port) = server_connection.get_port(0) {
             let peers_disconnected = main_port.check_peers_dropped();
             
+            if server_connection.is_authentication_connection() {
+                for (uuid,(_,_)) in peers_disconnected.iter() {
+                    server_connection.peers_connected.remove(uuid);
+                }
+            }
+            
             peer_dropped_server.write(PeersDroppedServer{
                 port_id: 0,
                 connection_id: *connection_id,
@@ -222,6 +265,12 @@ pub fn check_ports_peers_accepted(
 
         if let Some(main_port) = server_connection.get_port(0) {
             let seasons_uuids = main_port.anonymous_peers_accepted(semaphore,disconnect_peer_if_full);
+
+            if server_connection.is_authentication_connection() {
+                for uuid in &seasons_uuids {
+                    server_connection.peers_connected.insert(*uuid,(None,false));
+                }
+            }
 
             peers_accepted_on_port.write(AnonymousPeersAcceptedOnPort{
                 port_id: 0,

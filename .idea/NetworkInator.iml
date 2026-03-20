@@ -9,6 +9,7 @@
       <sourceFolder url="file://$MODULE_DIR$/message_pro_macro/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/examples/dedicated_server/client_dedicated_test/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/examples/dedicated_server/server_dedicated_test/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/examples/local_server/src" isTestSource="false" />
       <excludeFolder url="file://$MODULE_DIR$/target" />
     </content>
     <orderEntry type="inheritedJdk" />
