@@ -95,42 +95,40 @@ impl ClientPortTrait for TcpClientPort{
 
         self.starting = true;
 
-        if let Some(default_network_port_shared_infos) = network_port_shared_infos.downcast_ref::<DefaultNetworkPortSharedInfosClient>(){
-            if let Some(runtime) = &default_network_port_shared_infos.get_runtime() {
-                let settings = &self.settings;
-                let address = (settings.address, settings.port);
-                let first_started = self.first_started;
-                let hook_stream = settings.hook_stream;
+        if let Some(default_network_port_shared_infos) = network_port_shared_infos.downcast_ref::<DefaultNetworkPortSharedInfosClient>() && let Some(runtime) = &default_network_port_shared_infos.get_runtime(){
+            let settings = &self.settings;
+            let address = (settings.address, settings.port);
+            let first_started = self.first_started;
+            let hook_stream = settings.hook_stream;
 
-                let connecting_downed_sender = Arc::clone(&self.connecting_downed_sender);
-                let tcp_stream_sender = Arc::clone(&self.tcp_stream_sender);
+            let connecting_downed_sender = Arc::clone(&self.connecting_downed_sender);
+            let tcp_stream_sender = Arc::clone(&self.tcp_stream_sender);
 
-                runtime.spawn(async move {
-                    let tcp_stream_future = TcpStream::connect(address);
+            runtime.spawn(async move {
+                let tcp_stream_future = TcpStream::connect(address);
 
-                    match tcp_stream_future.await {
-                        Ok(mut tcp_stream) => {
-                            tcp_stream = match hook_stream {
-                                Some(hook_stream) => {
-                                    hook_stream(tcp_stream)
-                                }
-                                None => {
-                                    tcp_stream
-                                }
-                            };
-
-                            if let Err(send_error) = tcp_stream_sender.send(tcp_stream) {
-                                warn!("Failed to send TCP client connected, error: {}", send_error);
+                match tcp_stream_future.await {
+                    Ok(mut tcp_stream) => {
+                        tcp_stream = match hook_stream {
+                            Some(hook_stream) => {
+                                hook_stream(tcp_stream)
                             }
+                            None => {
+                                tcp_stream
+                            }
+                        };
+
+                        if let Err(send_error) = tcp_stream_sender.send(tcp_stream) {
+                            warn!("Failed to send TCP client connected, error: {}", send_error);
                         }
-                        Err(e) => {
-                            if let Err(send_error) = connecting_downed_sender.send((e,first_started)) {
-                                warn!("Failed to send TCP port failed to connect, error: {}", send_error);
-                            }
-                        },
                     }
-                });
-            }
+                    Err(e) => {
+                        if let Err(send_error) = connecting_downed_sender.send((e,first_started)) {
+                            warn!("Failed to send TCP port failed to connect, error: {}", send_error);
+                        }
+                    },
+                }
+            });
         }
     }
 
@@ -201,45 +199,43 @@ impl ClientPortTrait for TcpClientPort{
     }
 
     fn send_message_for_server(&mut self, message_id: u32, network_port_shared_infos: &dyn Any, message: &dyn MessageTrait, _send_args: Option<Box<dyn Any>>) {
-        if let Some(default_network_port_shared_infos) = network_port_shared_infos.downcast_ref::<DefaultNetworkPortSharedInfosClient>() {
-            if let Some(runtime) = &default_network_port_shared_infos.get_runtime() {
-                if let Some(owned_write_half) = &self.owned_write_half {
-                    let message_infos = &MessageInfos{
-                        message_id,
-                        message: postcard::to_stdvec(message).unwrap(),
-                    };
+        if let Some(default_network_port_shared_infos) = network_port_shared_infos.downcast_ref::<DefaultNetworkPortSharedInfosClient>()
+        && let Some(runtime) = &default_network_port_shared_infos.get_runtime()
+        && let Some(owned_write_half) = &self.owned_write_half
+        {
+            let message_infos = &MessageInfos{
+                message_id,
+                message: postcard::to_stdvec(message).unwrap(),
+            };
 
-                    let buffer = match postcard::to_stdvec(message_infos) {
-                        Ok(buff) => {buff}
-                        Err(_) => {
-                            warn!("Error to serialize message");
-                            return;
-                        }
-                    };
-
-                    let message_size = buffer.len();
-                    let owned_write_half = Arc::clone(owned_write_half);
-                    let settings = &self.settings;
-                    let order_options = settings.order;
-                    let bytes_options = settings.bytes;
-
-                    runtime.spawn(async move {
-                        let mut guard = owned_write_half.lock().await;
-
-                        let size_value = value_from_number(message_size as f64, bytes_options);
-
-                        if let Err(send_error) = write_from_settings(&mut guard, &size_value, &order_options).await {
-                            warn!("Failed to send TCP message client, error: {}", send_error);
-                            return;
-                        }
-
-                        if let Err(send_error) = guard.write_all(&buffer).await {
-                            warn!("Failed to send TCP all message client, error: {}", send_error);
-                            return;
-                        }
-                    });
+            let buffer = match postcard::to_stdvec(message_infos) {
+                Ok(buff) => {buff}
+                Err(_) => {
+                    warn!("Error to serialize message");
+                    return;
                 }
-            }
+            };
+
+            let message_size = buffer.len();
+            let owned_write_half = Arc::clone(owned_write_half);
+            let settings = &self.settings;
+            let order_options = settings.order;
+            let bytes_options = settings.bytes;
+
+            runtime.spawn(async move {
+                let mut guard = owned_write_half.lock().await;
+
+                let size_value = value_from_number(message_size as f64, bytes_options);
+
+                if let Err(send_error) = write_from_settings(&mut guard, &size_value, &order_options).await {
+                    warn!("Failed to send TCP message client, error: {}", send_error);
+                    return;
+                }
+
+                if let Err(send_error) = guard.write_all(&buffer).await {
+                    warn!("Failed to send TCP all message client, error: {}", send_error);
+                }
+            });
         }
     }
 
@@ -256,12 +252,11 @@ impl ClientPortTrait for TcpClientPort{
                     self.internal_buffer.extend_from_slice(&temp_buf[..n]);
                 }
                 Err(ref e) if e.kind() == ErrorKind::WouldBlock => {
-                    return;
+
                 }
                 Err(e) => {
                     if let Err(send_error) = self.connecting_downed_sender.send((e,self.first_started)) {
                         warn!("Failed to send TCP peer port connection_aborted, error: {}", send_error);
-                        return;
                     }
                 },
             }

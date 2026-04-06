@@ -94,37 +94,29 @@ fn authenticate_local_peer(
     let current_peer_uuid = local_peer_uuid.0.unwrap();
     
     for (_,connection) in server_network_connection.0.iter_mut(){
-        if let Some(main_port) = connection.get_port(0){
-            if !main_port.is_season_authenticated(&session_uuid) {
-                main_port.authenticate_peer(session_uuid, current_peer_uuid, Some(session_uuid));
-            }
+        if let Some(main_port) = connection.get_port(0) && !main_port.is_season_authenticated(&session_uuid) {
+            main_port.authenticate_peer(session_uuid, current_peer_uuid, Some(session_uuid));
         }
 
         let ports_amount = connection.get_ports_amount();
 
         for port_id in 1..=ports_amount {
-            if let Some(port) = connection.get_port(port_id){
-                if !port.is_season_authenticated(&session_uuid) {
-                    port.authenticate_peer(session_uuid, current_peer_uuid, Some(session_uuid));
-                }
+            if let Some(port) = connection.get_port(port_id) && !port.is_season_authenticated(&session_uuid){
+                port.authenticate_peer(session_uuid, current_peer_uuid, Some(session_uuid));
             }
         }
     }
 
     for (_,connection) in client_network_connection.0.iter_mut(){
-        if let Some(main_port) = connection.get_port(0){
-            if !main_port.is_port_authenticated() {
-                main_port.authenticate_port();
-            }
+        if let Some(main_port) = connection.get_port(0) && !main_port.is_port_authenticated(){
+            main_port.authenticate_port();
         }
 
         let ports_amount = connection.get_ports_amount();
 
         for port_id in 1..=ports_amount {
-            if let Some(port) = connection.get_port(port_id){
-                if !port.is_port_authenticated() {
-                    port.authenticate_port();
-                }
+            if let Some(port) = connection.get_port(port_id) && !port.is_port_authenticated(){
+                port.authenticate_port();
             }
         }
     }
@@ -146,21 +138,15 @@ fn check_peer_authenticated(
                 if !port.is_port_authenticate_able() { continue; }
 
                 if let Some(session_uuid) = auth_message.session_uuid {
-                    if let Some(current_peer_uuid) = authenticated_sessions.0.get(&session_uuid) {
-                        if !port.is_season_authenticated(&session_uuid) {
-                            port.authenticate_peer(message.session_uuid, *current_peer_uuid, Some(session_uuid));
+                    if let Some(current_peer_uuid) = authenticated_sessions.0.get(&session_uuid) && !port.is_season_authenticated(&session_uuid) {
+                        port.authenticate_peer(message.session_uuid, *current_peer_uuid, Some(session_uuid));
 
-                            server_connections_params.send_message::<AuthenticatedFromServer>(message.connection_id, message.port_id, &AuthenticatedFromServer{
-                                session_uuid,
-                                peer_uuid: *current_peer_uuid,
-                            }, *current_peer_uuid, None);
-                        }
+                        server_connections_params.send_message::<AuthenticatedFromServer>(message.connection_id, message.port_id, &AuthenticatedFromServer{
+                            session_uuid,
+                            peer_uuid: *current_peer_uuid,
+                        }, *current_peer_uuid, None);
                     }
-                }else if is_authentication_connection && port.is_main_port() {
-                    if port.is_season_authenticated(&message.session_uuid) {
-                        continue;
-                    }
-
+                }else if is_authentication_connection && port.is_main_port() && !port.is_season_authenticated(&message.session_uuid) {
                     let peer_uuid = Uuid::new_v4();
 
                     port.authenticate_peer(message.session_uuid, peer_uuid, None);
@@ -178,17 +164,15 @@ fn check_peer_authenticated(
     for message in message_received_from_authenticated_peer.read() {
         let auth_message = &message.message;
 
-        if let Some(connection) = server_connections_params.get_connections().0.get_mut(&message.connection_id) {
-            if let Some(_) = connection.get_port(message.port_id) {
-                if let Some(session_uuid) = auth_message.session_uuid {
-                    if let Some(current_peer_uuid) = authenticated_sessions.0.get(&session_uuid) {
-                        server_connections_params.send_message::<AuthenticatedFromServer>(message.connection_id, message.port_id, &AuthenticatedFromServer{
-                            session_uuid,
-                            peer_uuid: *current_peer_uuid,
-                        }, *current_peer_uuid, None);
-                    }
-                }
-            }
+        if let Some(connection) = server_connections_params.get_connections().0.get_mut(&message.connection_id)
+        && let Some(_) = connection.get_port(message.port_id) && let Some(session_uuid) = auth_message.session_uuid
+        && let Some(current_peer_uuid) = authenticated_sessions.0.get(&session_uuid)
+
+        {
+            server_connections_params.send_message::<AuthenticatedFromServer>(message.connection_id, message.port_id, &AuthenticatedFromServer{
+                session_uuid,
+                peer_uuid: *current_peer_uuid,
+            }, *current_peer_uuid, None);
         }
     }
 }
@@ -199,12 +183,8 @@ fn check_authenticated_peers_are_connected(
     local_peer_uuid: Option<NetRes<LocalPeerUUID>>,
 ){
     authenticated_sessions.0.retain(|_, peer_uuid| {
-        if let Some(local_peer_uuid) = &local_peer_uuid {
-            if let Some(local_peer_uuid) = &local_peer_uuid.0 {
-                if local_peer_uuid == peer_uuid {
-                    return true;
-                }
-            }
+        if let Some(local_peer_uuid) = &local_peer_uuid && let Some(local_peer_uuid) = &local_peer_uuid.0 && local_peer_uuid == peer_uuid {
+            return true;
         }
         
         for (_,connection) in network_connection.0.iter_mut() {
@@ -236,17 +216,15 @@ fn check_port_authenticated(
         local_peer_uuid.0 = Some(authenticated_from_server.peer_uuid);
         local_season_uuid.0 = Some(authenticated_from_server.session_uuid);
 
-        if let Some(connection) = network_connection.0.get_mut(&connection_id) {
-            if let Some(port) = connection.get_port(port_id) {
-                if !port.is_port_authenticated() {
-                    port.authenticate_port();
+        if let Some(connection) = network_connection.0.get_mut(&connection_id) && let Some(port) = connection.get_port(port_id)
+        && !port.is_port_authenticated()
+        {
+            port.authenticate_port();
 
-                    client_port_authenticated.write(ClientPortAuthenticated{
-                        port_id,
-                        connection_id,
-                    });
-                }
-            }
+            client_port_authenticated.write(ClientPortAuthenticated{
+                port_id,
+                connection_id,
+            });
         }
     }
 }
@@ -266,24 +244,20 @@ fn authenticate_port(
 
             pending.insert(*connection_id,Vec::from([0]));
         }else {
-            if let Some(main_port) = connection.get_port(0) {
-                if !main_port.is_port_authenticated() {
-                    pending.insert(*connection_id,Vec::from([0]));
-                }
+            if let Some(main_port) = connection.get_port(0) && !main_port.is_port_authenticated() {
+                pending.insert(*connection_id,Vec::from([0]));
             }
 
             let ports_amount = connection.get_ports_amount();
 
-            if pending.get(&connection_id).is_none(){
+            if !pending.contains_key(connection_id) {
                 pending.insert(*connection_id,Vec::new());
             }
 
-            let vec = pending.get_mut(&connection_id).unwrap();
+            let vec = pending.get_mut(connection_id).unwrap();
 
             for port_id in 1..=ports_amount {
-                if let Some(port) = connection.get_port(port_id) {
-                    if port.is_port_authenticated() { continue }
-
+                if let Some(port) = connection.get_port(port_id) && !port.is_port_authenticated() {
                     vec.push(port_id);
                 }
             }

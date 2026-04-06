@@ -119,104 +119,100 @@ impl ServerPortTrait for TcpServerPort{
 
         self.starting = true;
 
-        if let Some(default_network_port_shared_infos) = network_port_shared_infos.downcast_ref::<DefaultNetworkPortSharedInfosServer>(){
-            if let Some(runtime) = &default_network_port_shared_infos.get_runtime() {
-                let main_port = self.main_port;
-                let settings = &self.settings;
-                let address = (settings.address, settings.port);
+        if let Some(default_network_port_shared_infos) = network_port_shared_infos.downcast_ref::<DefaultNetworkPortSharedInfosServer>()
+        && let Some(runtime) = &default_network_port_shared_infos.get_runtime()
+        {
+            let main_port = self.main_port;
+            let settings = &self.settings;
+            let address = (settings.address, settings.port);
 
-                let tcp_listener_sender = Arc::clone(&self.tcp_listener_sender);
-                let connecting_downed_sender = Arc::clone(&self.connecting_downed_sender);
-                let connection_downed_sender_two = Arc::clone(&self.connecting_downed_sender);
-                let peer_connected_sender = Arc::clone(&self.peer_connected_sender);
+            let tcp_listener_sender = Arc::clone(&self.tcp_listener_sender);
+            let connecting_downed_sender = Arc::clone(&self.connecting_downed_sender);
+            let connection_downed_sender_two = Arc::clone(&self.connecting_downed_sender);
+            let peer_connected_sender = Arc::clone(&self.peer_connected_sender);
 
-                let first_started = self.first_started;
-                let (start_accepting_connections_sender, mut start_accepting_connections_receiver) = unbounded_channel::<Arc<TcpListener>>();
-                let mut tcp_listener: Option<Arc<TcpListener>> = None;
-                let semaphore: Option<Arc<Semaphore>> = if main_port && default_network_port_shared_infos.get_semaphore().is_some() {
-                    if let Some(semaphore) = &default_network_port_shared_infos.get_semaphore() {
-                        Some(Arc::clone(semaphore))
-                    }else {
-                        None
-                    }
-                } else {
+            let first_started = self.first_started;
+            let (start_accepting_connections_sender, mut start_accepting_connections_receiver) = unbounded_channel::<Arc<TcpListener>>();
+            let mut tcp_listener: Option<Arc<TcpListener>> = None;
+            let semaphore: Option<Arc<Semaphore>> = if main_port && default_network_port_shared_infos.get_semaphore().is_some() {
+                if let Some(semaphore) = &default_network_port_shared_infos.get_semaphore() {
+                    Some(Arc::clone(semaphore))
+                }else {
                     None
-                };
+                }
+            } else {
+                None
+            };
 
-                runtime.spawn(async move {
-                    let tcp_listener_future = TcpListener::bind(address);
+            runtime.spawn(async move {
+                let tcp_listener_future = TcpListener::bind(address);
 
-                    tokio::spawn(async move {
-                        match tcp_listener_future.await {
-                            Ok(tcp_listener) => {
-                                let tcp_listener_arc = Arc::new(tcp_listener);
+                tokio::spawn(async move {
+                    match tcp_listener_future.await {
+                        Ok(tcp_listener) => {
+                            let tcp_listener_arc = Arc::new(tcp_listener);
 
-                                if let Err(send_error) = start_accepting_connections_sender.send(Arc::clone(&tcp_listener_arc)) {
-                                    warn!("Failed to send TCP port connected receiver, error: {}", send_error);
-                                }
-
-                                if let Err(send_error) = tcp_listener_sender.send(Arc::clone(&tcp_listener_arc)) {
-                                    warn!("Failed to send TCP port connected receiver, error: {}", send_error);
-                                }
+                            if let Err(send_error) = start_accepting_connections_sender.send(Arc::clone(&tcp_listener_arc)) {
+                                warn!("Failed to send TCP port connected receiver, error: {}", send_error);
                             }
 
-                            Err(e) => {
-                                println!("failed to connect {}", e);
-
-                                if let Err(send_error) = connecting_downed_sender.send((e,first_started)) {
-                                    warn!("Failed to send TCP port failed to connect, error: {}", send_error);
-                                }
-                            },
+                            if let Err(send_error) = tcp_listener_sender.send(Arc::clone(&tcp_listener_arc)) {
+                                warn!("Failed to send TCP port connected receiver, error: {}", send_error);
+                            }
                         }
-                    });
 
-                    loop {
-                        match start_accepting_connections_receiver.recv().await {
-                            None => {
-                                break;
+                        Err(e) => {
+                            println!("failed to connect {}", e);
+
+                            if let Err(send_error) = connecting_downed_sender.send((e,first_started)) {
+                                warn!("Failed to send TCP port failed to connect, error: {}", send_error);
                             }
-                            Some(tcp_listener_received) => {
-                                tcp_listener = Some(tcp_listener_received);
-                            }
+                        },
+                    }
+                });
+
+                loop {
+                    match start_accepting_connections_receiver.recv().await {
+                        None => {
+                            break;
+                        }
+                        Some(tcp_listener_received) => {
+                            tcp_listener = Some(tcp_listener_received);
                         }
                     }
+                }
 
-                    if tcp_listener.is_none() {
-                        return;
-                    }else if let Some(tcp_listener) = &tcp_listener {
-                        loop {
-                            match tcp_listener.accept().await {
-                                Ok((tcp_stream,socket_addr)) => {
-                                    if let Some(semaphore) = semaphore.clone() {
-                                        match semaphore.try_acquire_owned() {
-                                            Ok(owned_semaphore_permit) => {
-                                                if let Err(send_error) = peer_connected_sender.send((tcp_stream,socket_addr,Some(owned_semaphore_permit))) {
-                                                    warn!("Failed to send TCP peer connected to port, error: {}", send_error);
-                                                    break
-                                                }
-                                            }
-                                            Err(_) => {
-                                                drop(tcp_stream);
+                if tcp_listener.is_some() && let Some(tcp_listener) = &tcp_listener {
+                    loop {
+                        match tcp_listener.accept().await {
+                            Ok((tcp_stream,socket_addr)) => {
+                                if let Some(semaphore) = semaphore.clone() {
+                                    match semaphore.try_acquire_owned() {
+                                        Ok(owned_semaphore_permit) => {
+                                            if let Err(send_error) = peer_connected_sender.send((tcp_stream,socket_addr,Some(owned_semaphore_permit))) {
+                                                warn!("Failed to send TCP peer connected to port, error: {}", send_error);
+                                                break
                                             }
                                         }
-                                    }else {
-                                        if let Err(send_error) = peer_connected_sender.send((tcp_stream,socket_addr,None)) {
-                                            warn!("Failed to send TCP peer connected to port, error: {}", send_error);
-                                            break
+                                        Err(_) => {
+                                            drop(tcp_stream);
                                         }
                                     }
-                                }
-                                Err(e) => {
-                                    if let Err(send_error) = connection_downed_sender_two.send((e,first_started)) {
-                                        warn!("Failed to send TCP port connection_aborted, error: {}", send_error);
-                                    }
+                                }else if let Err(send_error) = peer_connected_sender.send((tcp_stream,socket_addr,None)) {
+                                    warn!("Failed to send TCP peer connected to port, error: {}", send_error);
                                     break
                                 }
                             }
+                            Err(e) => {
+                                if let Err(send_error) = connection_downed_sender_two.send((e,first_started)) {
+                                    warn!("Failed to send TCP port connection_aborted, error: {}", send_error);
+                                }
+                                break
+                            }
                         }
                     }
-                });
-            }
+                }
+            });
         }
     }
 
@@ -297,47 +293,44 @@ impl ServerPortTrait for TcpServerPort{
     }
 
     fn send_message_to_peer(&mut self, message_id: u32, peer_id: Uuid, network_port_shared_infos: &dyn Any, message: &dyn MessageTrait, _send_args: Option<Box<dyn Any>>) {
-        if let Some(peer_authenticated) = self.peers_authenticated.get_mut(&peer_id) {
-            if let Some(peer_connected) = self.peers_connected.get_mut(peer_authenticated) {
-                if let Some(default_network_port_shared_infos) = network_port_shared_infos.downcast_ref::<DefaultNetworkPortSharedInfosServer>() {
-                    if let Some(runtime) = &default_network_port_shared_infos.get_runtime() {
-                        let message_infos = &MessageInfos{
-                            message_id,
-                            message: postcard::to_stdvec(message).unwrap(),
-                        };
+        if let Some(peer_authenticated) = self.peers_authenticated.get_mut(&peer_id)
+        && let Some(peer_connected) = self.peers_connected.get_mut(peer_authenticated)
+        && let Some(default_network_port_shared_infos) = network_port_shared_infos.downcast_ref::<DefaultNetworkPortSharedInfosServer>()
+        && let Some(runtime) = &default_network_port_shared_infos.get_runtime()
+        {
+            let message_infos = &MessageInfos{
+                message_id,
+                message: postcard::to_stdvec(message).unwrap(),
+            };
 
-                        let buffer = match postcard::to_stdvec(message_infos) {
-                            Ok(buff) => {buff}
-                            Err(_) => {
-                                warn!("Error to serialize message");
-                                return;
-                            }
-                        };
-
-                        let message_size = buffer.len();
-                        let owned_write_half = Arc::clone(&peer_connected.owned_write_half);
-                        let settings = &self.settings;
-                        let order_options = settings.order;
-                        let bytes_options = settings.bytes;
-
-                        runtime.spawn(async move {
-                            let mut guard = owned_write_half.lock().await;
-
-                            let size_value = value_from_number(message_size as f64, bytes_options);
-
-                            if let Err(send_error) = write_from_settings(&mut guard, &size_value, &order_options).await {
-                                warn!("Failed to send TCP message server, error: {}", send_error);
-                                return;
-                            }
-
-                            if let Err(send_error) = guard.write_all(&buffer).await {
-                                warn!("Failed to send TCP all message server, error: {}", send_error);
-                                return;
-                            }
-                        });
-                    }
+            let buffer = match postcard::to_stdvec(message_infos) {
+                Ok(buff) => {buff}
+                Err(_) => {
+                    warn!("Error to serialize message");
+                    return;
                 }
-            }
+            };
+
+            let message_size = buffer.len();
+            let owned_write_half = Arc::clone(&peer_connected.owned_write_half);
+            let settings = &self.settings;
+            let order_options = settings.order;
+            let bytes_options = settings.bytes;
+
+            runtime.spawn(async move {
+                let mut guard = owned_write_half.lock().await;
+
+                let size_value = value_from_number(message_size as f64, bytes_options);
+
+                if let Err(send_error) = write_from_settings(&mut guard, &size_value, &order_options).await {
+                    warn!("Failed to send TCP message server, error: {}", send_error);
+                    return;
+                }
+
+                if let Err(send_error) = guard.write_all(&buffer).await {
+                    warn!("Failed to send TCP all message server, error: {}", send_error);
+                }
+            });
         }
     }
 
@@ -348,23 +341,16 @@ impl ServerPortTrait for TcpServerPort{
     fn get_peers_disconnected(&mut self) -> HashMap<Uuid,(Option<Uuid>, Error)> {
         let mut peers: HashMap<Uuid,(Option<Uuid>, Error)> = HashMap::new();
 
-        loop {
-            match self.peer_disconnected_receiver.try_recv() {
-                Ok((season_uuid,peer_id,error)) => {
-                    if let Some(peer_connected) = self.peers_connected.remove(&season_uuid){
-                        drop(peer_connected);
-                    }
-
-                    if let Some(peer_id) = peer_id {
-                        self.peers_authenticated.remove(&peer_id);
-                    }
-
-                    peers.insert(season_uuid, (peer_id, error));
-                }
-                Err(_) => {
-                    break
-                }
+        while let Ok((season_uuid,peer_id,error)) = self.peer_disconnected_receiver.try_recv() {
+            if let Some(peer_connected) = self.peers_connected.remove(&season_uuid){
+                drop(peer_connected);
             }
+
+            if let Some(peer_id) = peer_id {
+                self.peers_authenticated.remove(&peer_id);
+            }
+
+            peers.insert(season_uuid, (peer_id, error));
         }
 
         let now = Instant::now().elapsed().as_millis_f32();
@@ -377,7 +363,7 @@ impl ServerPortTrait for TcpServerPort{
                 return false
             };
 
-            return true
+            true
         });
 
         peers
@@ -388,40 +374,33 @@ impl ServerPortTrait for TcpServerPort{
         let peers_connected = &mut self.peers_connected;
         let hook_stream = &self.settings.hook_stream;
 
-        loop {
-            match self.peer_connected_receiver.try_recv() {
-                Ok((mut tcp_stream,socket_addr,owned_semaphore_permit)) => {
-                    let season_uuid = Uuid::new_v4();
+        while let Ok((mut tcp_stream,socket_addr,owned_semaphore_permit)) = self.peer_connected_receiver.try_recv() {
+            let season_uuid = Uuid::new_v4();
 
-                    tcp_stream = match hook_stream {
-                        Some(hook_stream) => {
-                            hook_stream(tcp_stream)
-                        }
-                        None => {
-                            tcp_stream
-                        }
-                    };
-
-                    let (owned_read_half,owned_write_half) = tcp_stream.into_split();
-                    
-                    peers_connected.insert(season_uuid, PeerConnected{
-                        peer_id: None,
-                        owned_semaphore_permit,
-                        owned_read_half,
-                        owned_write_half: Arc::new(Mutex::from(owned_write_half)),
-                        socket_addr,
-                        internal_buffer: Vec::new(),
-                        non_authenticated_time: Instant::now().elapsed().as_millis_f32()
-                    });
-
-                    peers.push(season_uuid);
+            tcp_stream = match hook_stream {
+                Some(hook_stream) => {
+                    hook_stream(tcp_stream)
                 }
-                Err(_) => {
-                    break
+                None => {
+                    tcp_stream
                 }
-            }
+            };
+
+            let (owned_read_half,owned_write_half) = tcp_stream.into_split();
+
+            peers_connected.insert(season_uuid, PeerConnected{
+                peer_id: None,
+                owned_semaphore_permit,
+                owned_read_half,
+                owned_write_half: Arc::new(Mutex::from(owned_write_half)),
+                socket_addr,
+                internal_buffer: Vec::new(),
+                non_authenticated_time: Instant::now().elapsed().as_millis_f32()
+            });
+
+            peers.push(season_uuid);
         }
-
+        
         peers
     }
 

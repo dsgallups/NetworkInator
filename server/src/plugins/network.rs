@@ -40,9 +40,7 @@ pub struct PeersDroppedServer{
 
 impl Plugin for ServerNetworkPlugin {
     fn build(&self, app: &mut App) {
-        let messaging_plugin_added = if app.is_plugin_added::<MessagingPlugin>() {
-            true
-        } else { false };
+        let messaging_plugin_added = app.is_plugin_added::<MessagingPlugin>();
 
         let current_network_sides = app.world_mut().get_resource_mut::<CurrentNetworkSides>();
 
@@ -88,10 +86,8 @@ pub fn start_ports(
                         connection_id: *connection_id,
                     });
                 }
-            }else {
-                if let Some(network_port_shared_infos) = network_port_shared_infos{
-                    main_port.start(network_port_shared_infos);
-                }
+            }else if let Some(network_port_shared_infos) = network_port_shared_infos {
+                main_port.start(network_port_shared_infos);
             }
         }
 
@@ -128,7 +124,7 @@ pub fn check_peers_connected(
         if let Some(main_port) = server_connection.get_port(0) {
             let peers_connected = main_port.peers_connected();
             
-            if peers_connected.len() > 0 {
+            if !peers_connected.is_empty() {
                 anonymous_peers_accepted_on_port.write(AnonymousPeersAcceptedOnPort{
                     port_id: 0,
                     connection_id: *connection_id,
@@ -143,7 +139,7 @@ pub fn check_peers_connected(
             if let Some(port) = server_connection.get_port(port_id) {
                 let peers_connected = port.peers_connected();
 
-                if peers_connected.len() > 0 {
+                if !peers_connected.is_empty() {
                     anonymous_peers_accepted_on_port.write(AnonymousPeersAcceptedOnPort{
                         port_id,
                         connection_id: *connection_id,
@@ -158,20 +154,20 @@ pub fn check_peers_connected(
 pub fn listen_peers(
     mut network_connection: NetResMut<NetworkConnection<ServerConnection>>,
 ){
-    for (_,server_connection) in &mut network_connection.0 {
-        if let (Some(main_port), network_port_shared_infos) = server_connection.get_port_split(0) {
-            if let Some(network_port_shared_infos) = network_port_shared_infos{
-                main_port.listen_peers(network_port_shared_infos);
-            }
+    for server_connection in &mut network_connection.0.values_mut() {
+        if let (Some(main_port), network_port_shared_infos) = server_connection.get_port_split(0)
+        && let Some(network_port_shared_infos) = network_port_shared_infos
+        {
+            main_port.listen_peers(network_port_shared_infos);
         }
 
         let ports_amount = server_connection.get_ports_amount();
 
         for port_id in 1..=ports_amount {
-            if let (Some(port),network_port_shared_infos) = server_connection.get_port_split(port_id) {
-                if let Some(network_port_shared_infos) = network_port_shared_infos{
-                    port.listen_peers(network_port_shared_infos);
-                }
+            if let (Some(port),network_port_shared_infos) = server_connection.get_port_split(port_id)
+            && let Some(network_port_shared_infos) = network_port_shared_infos
+            {
+                port.listen_peers(network_port_shared_infos);
             }
         }
     }
@@ -185,7 +181,7 @@ pub fn check_peers_disconnected(
         if let Some(main_port) = server_connection.get_port(0) {
             let peers_dropped = main_port.get_peers_disconnected();
 
-            if peers_dropped.len() > 0 {
+            if !peers_dropped.is_empty() {
               peers_dropped_server.write(PeersDroppedServer{
                   port_id: 0,
                   connection_id: *connection_id,
@@ -200,7 +196,7 @@ pub fn check_peers_disconnected(
             if let Some(port) = server_connection.get_port(port_id) {
                 let peers_dropped = port.get_peers_disconnected();
 
-                if peers_dropped.len() > 0 {
+                if !peers_dropped.is_empty() {
                     peers_dropped_server.write(PeersDroppedServer{
                         port_id,
                         connection_id: *connection_id,

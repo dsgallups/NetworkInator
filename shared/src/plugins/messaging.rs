@@ -4,23 +4,19 @@ use bevy::app::{App, Plugin};
 use bevy::asset::uuid::Uuid;
 use bevy::ecs::system::SystemParam;
 use bevy::prelude::{Commands, Message, Messages, ResMut, Resource, Update, World};
+use bevy::tasks::ConditionalSend;
 use erased_serde::{serialize_trait_object, Serialize as ErasedSerialize};
 use serde::{Deserialize, Serialize};
 use crate::{NetRes, NetResMut};
 use crate::plugins::network::{ClientConnection, CurrentNetworkSides, NetworkConnection, NetworkType, ServerConnection};
 
 #[cfg(target_arch = "wasm32")]
-pub trait MessageTrait: 'static + ErasedSerialize {
-    fn deserialize(data: &[u8]) -> Self
-    where
-        Self: Sized;
-    fn as_authentication(&self) -> bool {
-        false
-    }
-}
+type DispatchMessage = Box<dyn Any>;
 
 #[cfg(not(target_arch = "wasm32"))]
-pub trait MessageTrait: 'static + ErasedSerialize + Send + Sync {
+type DispatchMessage = Box<dyn Any + Send + Sync>;
+
+pub trait MessageTrait: 'static + ErasedSerialize + ConditionalSend + Sync {
     fn deserialize(data: &[u8]) -> Self where Self: Sized;
     fn as_authentication(&self) -> bool {
         false
@@ -31,28 +27,14 @@ serialize_trait_object!(MessageTrait);
 
 pub struct MessagingPlugin;
 
-#[cfg(target_arch = "wasm32")]
 pub struct MessageFunctionsServer{
-    deserialize: fn(&[u8]) -> Box<dyn Any>,
-    dispatch_message: fn(world: &mut World, message: Box<dyn Any>, connection_id: u32, port_id: u32, peer_uuid: Option<Uuid>, session_id: Uuid),
+    deserialize: fn(&[u8]) -> DispatchMessage,
+    dispatch_message: fn(world: &mut World, message: DispatchMessage, connection_id: u32, port_id: u32, peer_uuid: Option<Uuid>, session_id: Uuid),
 }
 
-#[cfg(target_arch = "wasm32")]
 pub struct MessageFunctionsClient{
-    deserialize: fn(&[u8]) -> Box<dyn Any>,
-    dispatch_message: fn(world: &mut World, message: Box<dyn Any>, connection_id: u32, port_id: u32)
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-pub struct MessageFunctionsServer{
-    deserialize: fn(&[u8]) -> Box<dyn Any + Send + Sync>,
-    dispatch_message: fn(world: &mut World, message: Box<dyn Any + Send + Sync>, connection_id: u32, port_id: u32, peer_uuid: Option<Uuid>, session_id: Uuid),
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-pub struct MessageFunctionsClient{
-    deserialize: fn(&[u8]) -> Box<dyn Any + Send + Sync>,
-    dispatch_message: fn(world: &mut World, message: Box<dyn Any + Send + Sync>, connection_id: u32, port_id: u32)
+    deserialize: fn(&[u8]) -> DispatchMessage,
+    dispatch_message: fn(world: &mut World, message: DispatchMessage, connection_id: u32, port_id: u32)
 }
 
 pub trait MessageTraitPlugin{
@@ -244,25 +226,23 @@ impl MessageTraitPlugin for App {
                     msg_registry.2.insert(type_id,new_value);
                 }
             }
-        }else if is_dedicated_server {
-            if !found_message_server {
-                let world = self.world_mut();
+        }else if is_dedicated_server && !found_message_server {
+            let world = self.world_mut();
 
-                let mut msg_registry = world
-                    .get_resource_mut::<MessagesRegistryServer>()
-                    .expect("MessagesRegistryServer not registered; please add MessagingPlugin first");
-                let new_value = msg_registry.0 + 1;
-                let type_id = TypeId::of::<T>();
+            let mut msg_registry = world
+                .get_resource_mut::<MessagesRegistryServer>()
+                .expect("MessagesRegistryServer not registered; please add MessagingPlugin first");
+            let new_value = msg_registry.0 + 1;
+            let type_id = TypeId::of::<T>();
 
-                msg_registry.0 = new_value;
+            msg_registry.0 = new_value;
 
-                msg_registry.1.insert(new_value, MessageFunctionsServer{
-                    deserialize: deserialize_message::<T>,
-                    dispatch_message: dispatch_message_server::<T>,
-                });
+            msg_registry.1.insert(new_value, MessageFunctionsServer{
+                deserialize: deserialize_message::<T>,
+                dispatch_message: dispatch_message_server::<T>,
+            });
 
-                msg_registry.2.insert(type_id,new_value);
-            }
+            msg_registry.2.insert(type_id,new_value);
         }
     }
 }
@@ -279,7 +259,7 @@ fn check_messages_from_client(
                     let message_infos = main_port.deserialize_message_infos(bytes);
 
                     if let Some(registry) = messages_registry_server.1.get(&message_infos.message_id) {
-                        let message = (registry.deserialize)(&*message_infos.message);
+                        let message = (registry.deserialize)(&message_infos.message);
                         let dispatch = registry.dispatch_message;
                         let connection_id = *connection_id;
 
@@ -298,7 +278,7 @@ fn check_messages_from_client(
                     let message_infos = port.deserialize_message_infos(bytes);
 
                     if let Some(registry) = messages_registry_server.1.get(&message_infos.message_id) {
-                        let message = (registry.deserialize)(&*message_infos.message);
+                        let message = (registry.deserialize)(&message_infos.message);
                         let dispatch = registry.dispatch_message;
                         let connection_id = *connection_id;
                         let port_id = *port_id;
@@ -324,7 +304,7 @@ fn check_messages_from_server(
                 let message_infos = main_port.deserialize_message_infos(bytes);
 
                 if let Some(registry) = messages_registry_client.1.get(&message_infos.message_id) {
-                    let message = (registry.deserialize)(&*message_infos.message);
+                    let message = (registry.deserialize)(&message_infos.message);
                     let dispatch = registry.dispatch_message;
                     let connection_id = *connection_id;
 
@@ -340,7 +320,7 @@ fn check_messages_from_server(
                 let message_infos = port.deserialize_message_infos(bytes);
 
                 if let Some(registry) = messages_registry_client.1.get(&message_infos.message_id) {
-                    let message = (registry.deserialize)(&*message_infos.message);
+                    let message = (registry.deserialize)(&message_infos.message);
                     let dispatch = registry.dispatch_message;
                     let connection_id = *connection_id;
                     let port_id = *port_id;
@@ -354,22 +334,13 @@ fn check_messages_from_server(
     }
 }
 
-#[cfg(target_arch = "wasm32")]
-fn deserialize_message<T: MessageTrait>(bytes: &[u8]) -> Box<dyn Any> {
+fn deserialize_message<T: MessageTrait>(bytes: &[u8]) -> DispatchMessage {
     let message = T::deserialize(bytes);
 
     Box::new(message)
 }
 
-#[cfg(not(target_arch = "wasm32"))]
-fn deserialize_message<T: MessageTrait>(bytes: &[u8]) -> Box<dyn Any + Send + Sync> {
-    let message = T::deserialize(bytes);
-
-    Box::new(message)
-}
-
-#[cfg(target_arch = "wasm32")]
-fn dispatch_message_server<T: MessageTrait>(world: &mut World, message: Box<dyn Any>, connection_id: u32, port_id: u32, peer_uuid: Option<Uuid>, session_id: Uuid)  {
+fn dispatch_message_server<T: MessageTrait>(world: &mut World, message: DispatchMessage, connection_id: u32, port_id: u32, peer_uuid: Option<Uuid>, session_id: Uuid)  {
     let message = match  message.downcast::<T>(){
         Ok(message) => message,
         Err(error) => { println!("Failed to downcast message type: {:?}", error); return; }
@@ -393,45 +364,7 @@ fn dispatch_message_server<T: MessageTrait>(world: &mut World, message: Box<dyn 
     }
 }
 
-
-#[cfg(not(target_arch = "wasm32"))]
-fn dispatch_message_server<T: MessageTrait>(world: &mut World, message: Box<dyn Any + Send + Sync>, connection_id: u32, port_id: u32, peer_uuid: Option<Uuid>, session_id: Uuid)  {
-    let message = match  message.downcast::<T>(){
-        Ok(message) => message,
-        Err(error) => { println!("Failed to downcast message type: {:?}", error); return; }
-    };
-
-    if let Some(peer_uuid) = peer_uuid{
-        world.write_message(MessageReceivedFromPeer {
-            message: *message,
-            peer_uuid,
-            session_uuid: session_id,
-            port_id,
-            connection_id,
-        });
-    }else {
-        world.write_message(MessageReceivedFromAnonymousPeer {
-            message: *message,
-            session_uuid: session_id,
-            port_id,
-            connection_id,
-        });
-    }
-}
-
-#[cfg(target_arch = "wasm32")]
-fn dispatch_message_client<T: MessageTrait>(world: &mut World, message: Box<dyn Any>, connection_id: u32, port_id: u32)  {
-    let message = message.downcast::<T>().expect("Failed to downcast");
-
-    world.write_message(MessageReceivedFromServer{
-        message: *message,
-        port_id,
-        connection_id,
-    });
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-fn dispatch_message_client<T: MessageTrait>(world: &mut World, message: Box<dyn Any + Send + Sync>, connection_id: u32, port_id: u32)  {
+fn dispatch_message_client<T: MessageTrait>(world: &mut World, message: DispatchMessage, connection_id: u32, port_id: u32)  {
     let message = message.downcast::<T>().expect("Failed to downcast");
 
     world.write_message(MessageReceivedFromServer{

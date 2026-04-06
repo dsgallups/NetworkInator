@@ -36,6 +36,7 @@ pub trait ServerPortTrait{
     fn get_port_reliability(&mut self) -> &PortReliability;
     fn as_main_port(&mut self) -> bool;
     fn send_message_to_peer(&mut self, message_id: u32, peer_id: Uuid, network_port_shared_infos: &dyn Any, message: &dyn MessageTrait, send_args: Option<Box<dyn Any>>);
+    fn is_main_port(&self) -> bool;
 
     fn deserialize_message_infos(&self, vec: Vec<u8>) -> MessageInfos {
         from_bytes::<MessageInfos>(&vec).unwrap()
@@ -57,8 +58,20 @@ pub trait ServerPortTrait{
 
     }
 
-    fn authenticate_peers(&mut self, _current_season_uuid: Uuid, _new_peer_id: Uuid, _new_season_uuid: Option<Uuid>) {
+    fn authenticate_peer(&mut self, _current_season_uuid: Uuid, _new_peer_id: Uuid, _new_season_uuid: Option<Uuid>) {
 
+    }
+
+    fn is_season_authenticated(&self, _season_uuid: &Uuid) -> bool {
+        true
+    }
+
+    fn is_port_authenticate_able(&self) -> bool {
+        true
+    }
+
+    fn is_peer_connected(&self, _peer_uuid: &Uuid) -> bool {
+        false
     }
 
     fn get_peer_socket_socket_addr(&self, _peer_uuid: &Uuid) -> Option<SocketAddr> {
@@ -534,10 +547,8 @@ impl NetworkConnection<ServerConnection> {
     }
 
     pub(crate) fn send_message(&mut self, message_id: u32, connection_id: u32, port_id: u32, message: &dyn MessageTrait, peer_id: Uuid, send_args: Option<Box<dyn Any>>) {
-        if let Some(server_connection) = self.0.get_mut(&connection_id){
-            if let (Some(port),Some(network_port_shared_infos)) = server_connection.get_port_split(port_id) {
-                port.send_message_to_peer(message_id, peer_id, network_port_shared_infos, message, send_args);
-            }
+        if let Some(server_connection) = self.0.get_mut(&connection_id) && let (Some(port),Some(network_port_shared_infos)) = server_connection.get_port_split(port_id) {
+            port.send_message_to_peer(message_id, peer_id, network_port_shared_infos, message, send_args);
         }
     }
 
@@ -585,10 +596,8 @@ impl NetworkConnection<ClientConnection> {
     }
 
     pub(crate) fn send_message_to_server(&mut self, message_id: u32, connection_id: u32, port_id: u32, message: &dyn MessageTrait, send_args: Option<Box<dyn Any>>) {
-        if let Some(client_connection) = self.0.get_mut(&connection_id){
-            if let (Some(port),Some(network_port_shared_infos)) = client_connection.get_port_split(port_id) {
-                port.send_message_for_server(message_id, network_port_shared_infos, message, send_args);
-            }
+        if let Some(client_connection) = self.0.get_mut(&connection_id) && let (Some(port),Some(network_port_shared_infos)) = client_connection.get_port_split(port_id) {
+            port.send_message_for_server(message_id, network_port_shared_infos, message, send_args);
         }
     }
 

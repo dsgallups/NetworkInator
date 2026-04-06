@@ -23,9 +23,7 @@ pub struct ClientPortDisconnected{
 
 impl Plugin for ClientNetworkPlugin {
     fn build(&self, app: &mut App) {
-        let messaging_plugin_added = if app.is_plugin_added::<MessagingPlugin>() {
-            true
-        } else { false };
+        let messaging_plugin_added = app.is_plugin_added::<MessagingPlugin>();
 
         let current_network_sides = app.world_mut().get_resource_mut::<CurrentNetworkSides>();
 
@@ -60,10 +58,8 @@ pub fn start_ports(
     server_network_connection: Option<NetRes<NetworkConnection<ServerConnection>>>,
 ){
     for (connection_id,client_connection) in &mut network_connection.0 {
-        if let Some(server_network_connection) = server_network_connection.as_ref() {
-            if let Some(_) = server_network_connection.0.get(connection_id) {
-                continue;
-            }
+        if let Some(server_network_connection) = server_network_connection.as_ref() && server_network_connection.0.contains_key(connection_id) {
+            continue;
         }
 
         if let (Some(main_port), network_port_shared_infos) = client_connection.get_port_split(0) {
@@ -76,10 +72,8 @@ pub fn start_ports(
                         connection_id: *connection_id,
                     });
                 }
-            }else{
-                if let Some(network_port_shared_infos) = network_port_shared_infos{
-                    main_port.start(network_port_shared_infos);
-                }
+            }else if let Some(network_port_shared_infos) = network_port_shared_infos{
+                main_port.start(network_port_shared_infos);
             }
         }
 
@@ -111,19 +105,15 @@ pub fn start_listening_ports(
     mut network_connection: NetResMut<NetworkConnection<ClientConnection>>,
 ){
     for (_,client_connection) in &mut network_connection.0.iter_mut() {
-        if let (Some(main_port), network_port_shared_infos) = client_connection.get_port_split(0) {
-            if let Some(network_port_shared_infos) = network_port_shared_infos{
-                main_port.listen_to_server(network_port_shared_infos);
-            }
+        if let (Some(main_port), network_port_shared_infos) = client_connection.get_port_split(0) && let Some(network_port_shared_infos) = network_port_shared_infos {
+            main_port.listen_to_server(network_port_shared_infos);
         }
 
         let ports_amount = client_connection.get_ports_amount();
 
         for port_id in 1..=ports_amount {
-            if let (Some(port), network_port_shared_infos) = client_connection.get_port_split(port_id) {
-                if let Some(network_port_shared_infos) = network_port_shared_infos{
-                    port.listen_to_server(network_port_shared_infos);
-                }
+            if let (Some(port), network_port_shared_infos) = client_connection.get_port_split(port_id) && let Some(network_port_shared_infos) = network_port_shared_infos {
+                port.listen_to_server(network_port_shared_infos);
             }
         }
     }

@@ -23,17 +23,8 @@ pub fn derive_message(input: TokenStream) -> TokenStream {
 
             if let Ok(list) = list {
                 for meta in list {
-                    match meta {
-                        Meta::NameValue(nv) => {
-                            if nv.path.is_ident("authentication") {
-                                if let Expr::Lit(expr_lit) = nv.value {
-                                    if let Lit::Bool(b) = expr_lit.lit {
-                                        is_authentication = b.value;
-                                    }
-                                }
-                            }
-                        }
-                        _ => {}
+                    if let Meta::NameValue(nv) = meta && nv.path.is_ident("authentication") && let Expr::Lit(expr_lit) = nv.value && let Lit::Bool(b) = expr_lit.lit {
+                        is_authentication = b.value;
                     }
                 }
             }
