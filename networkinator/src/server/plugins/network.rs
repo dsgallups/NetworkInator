@@ -28,7 +28,7 @@ pub struct ServerPortDisconnected{
 pub struct AnonymousPeersAcceptedOnPort{
     pub port_id: u32,
     pub connection_id: u32,
-    pub seasons_uuids: Vec<Uuid>
+    pub sessions_uuids: Vec<Uuid>
 }
 
 #[derive(Message)]
@@ -128,7 +128,7 @@ pub fn check_peers_connected(
                 anonymous_peers_accepted_on_port.write(AnonymousPeersAcceptedOnPort{
                     port_id: 0,
                     connection_id: *connection_id,
-                    seasons_uuids: peers_connected,
+                    sessions_uuids: peers_connected,
                 });
             }
         }
@@ -143,7 +143,7 @@ pub fn check_peers_connected(
                     anonymous_peers_accepted_on_port.write(AnonymousPeersAcceptedOnPort{
                         port_id,
                         connection_id: *connection_id,
-                        seasons_uuids: peers_connected,
+                        sessions_uuids: peers_connected,
                     });
                 }
             }
@@ -252,8 +252,8 @@ pub fn ping_ports(
         if let (Some(main_port), network_port_shared_infos) = server_connection.get_port_split(0)
             && let Some(network_port_shared_infos) = network_port_shared_infos {
 
-            for (season_uuid,_) in main_port.get_authenticated_seasons() {
-                main_port.ping(&season_uuid, network_port_shared_infos);
+            for (session_uuid,_) in main_port.get_authenticated_sessions() {
+                main_port.ping(&session_uuid, network_port_shared_infos);
             }
         }
 
@@ -263,8 +263,8 @@ pub fn ping_ports(
             if let (Some(port), network_port_shared_infos) = server_connection.get_port_split(_port_id)
                 && let Some(network_port_shared_infos) = network_port_shared_infos {
 
-                for (season_uuid,_) in port.get_authenticated_seasons() {
-                    port.ping(&season_uuid, network_port_shared_infos);
+                for (session_uuid,_) in port.get_authenticated_sessions() {
+                    port.ping(&session_uuid, network_port_shared_infos);
                 }
             }
         }

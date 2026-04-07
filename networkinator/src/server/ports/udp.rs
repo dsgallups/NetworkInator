@@ -36,7 +36,7 @@ pub struct UdpServerPort {
     first_started: bool,
 
     peers_connected: HashMap<Uuid, PeerConnected>,
-    peer_uuid_to_season_uuid: HashMap<Uuid,Uuid>,
+    peer_uuid_to_session_uuid: HashMap<Uuid,Uuid>,
 
     udp_socket_receiver: UnboundedReceiver<Arc<UdpSocket>>,
     udp_socket_sender: Arc<UnboundedSender<Arc<UdpSocket>>>,
@@ -94,7 +94,7 @@ impl ServerSettingsPort for UdpServerSettings{
             first_started: false,
 
             peers_connected: HashMap::new(),
-            peer_uuid_to_season_uuid: HashMap::new(),
+            peer_uuid_to_session_uuid: HashMap::new(),
 
             udp_socket_receiver,
             udp_socket_sender: Arc::new(udp_socket_sender),
@@ -166,12 +166,12 @@ impl ServerPortTrait for UdpServerPort {
                             let buff: Vec<u8> = buf[..len].to_vec();
 
                             match extract_uuid(&buff) {
-                                Ok((season_uuid,new_buffer)) => {
-                                    if season_uuid.is_nil() {
+                                Ok((session_uuid,new_buffer)) => {
+                                    if session_uuid.is_nil() {
                                         continue;
                                     }
 
-                                    if let Err(send_error) = peer_message_sender.send((new_buffer, season_uuid, addr)) {
+                                    if let Err(send_error) = peer_message_sender.send((new_buffer, session_uuid, addr)) {
                                         warn!("Failed to send UDP peer message, error: {}", send_error);
                                     }
                                 }
@@ -245,11 +245,11 @@ impl ServerPortTrait for UdpServerPort {
         let peers_connected = &mut self.peers_connected;
         let now = Instant::now();
 
-        while let Ok((buff, season_uuid, socket)) = self.peer_message_receiver.try_recv() {
-            if let Some(peer_connected) = peers_connected.get_mut(&season_uuid) {
-                messages_list.insert(season_uuid, (Vec::from([buff]), peer_connected.peer_id));
+        while let Ok((buff, session_uuid, socket)) = self.peer_message_receiver.try_recv() {
+            if let Some(peer_connected) = peers_connected.get_mut(&session_uuid) {
+                messages_list.insert(session_uuid, (Vec::from([buff]), peer_connected.peer_id));
             }else {
-                peers_connected.insert(season_uuid, PeerConnected{
+                peers_connected.insert(session_uuid, PeerConnected{
                     peer_id: None,
                     socket_addr: socket,
                     non_authenticated_instant: now,
@@ -257,7 +257,7 @@ impl ServerPortTrait for UdpServerPort {
                     last_ping_instant: now
                 });
 
-                messages_list.insert(season_uuid, (Vec::from([buff]), None));
+                messages_list.insert(session_uuid, (Vec::from([buff]), None));
             }
         }
 
@@ -273,8 +273,8 @@ impl ServerPortTrait for UdpServerPort {
     }
 
     fn send_message_to_peer(&mut self, message_id: u32, peer_id: Uuid, network_port_shared_infos: &dyn Any, message: &dyn MessageTrait, _send_args: Option<Box<dyn Any>>) {
-        if let Some(udp_socket) = &self.udp_socket && let Some(season_uuid) = self.peer_uuid_to_season_uuid.get_mut(&peer_id)
-            && let Some(peer_connected) = self.peers_connected.get_mut(season_uuid)
+        if let Some(udp_socket) = &self.udp_socket && let Some(session_uuid) = self.peer_uuid_to_session_uuid.get_mut(&peer_id)
+            && let Some(peer_connected) = self.peers_connected.get_mut(session_uuid)
             && let Some(default_network_port_shared_infos) = network_port_shared_infos.downcast_ref::<DefaultNetworkPortSharedInfosServer>()
             && let Some(runtime) = &default_network_port_shared_infos.get_runtime()
         {
@@ -304,34 +304,34 @@ impl ServerPortTrait for UdpServerPort {
         false
     }
 
-    fn get_anonymous_seasons(&self) -> Vec<Uuid> {
-        let mut annoy_anonymous_seasons = Vec::new();
+    fn get_anonymous_sessions(&self) -> Vec<Uuid> {
+        let mut annoy_anonymous_sessions = Vec::new();
 
-        for (season_uuid,peer_connected) in self.peers_connected.iter() {
+        for (session_uuid,peer_connected) in self.peers_connected.iter() {
             if peer_connected.peer_id.is_none(){
-                annoy_anonymous_seasons.push(*season_uuid);
+                annoy_anonymous_sessions.push(*session_uuid);
             }
         }
 
-        annoy_anonymous_seasons
+        annoy_anonymous_sessions
     }
 
-    fn get_authenticated_seasons(&self) -> Vec<(Uuid,Uuid)> {
-        let mut annoy_anonymous_seasons = Vec::new();
+    fn get_authenticated_sessions(&self) -> Vec<(Uuid,Uuid)> {
+        let mut annoy_anonymous_sessions = Vec::new();
 
-        for (season_uuid,peer_connected) in self.peers_connected.iter() {
+        for (session_uuid,peer_connected) in self.peers_connected.iter() {
             if let Some(peer_id) = peer_connected.peer_id {
-                annoy_anonymous_seasons.push((*season_uuid,peer_id));
+                annoy_anonymous_sessions.push((*session_uuid,peer_id));
             }
         }
 
-        annoy_anonymous_seasons
+        annoy_anonymous_sessions
     }
 
     fn get_peers_disconnected(&mut self) -> HashMap<Uuid,(Option<Uuid>, Error)> {
         let now = Instant::now();
 
-        self.peers_connected.retain(|_season_uuid, peer_connected| {
+        self.peers_connected.retain(|_session_uuid, peer_connected| {
             if peer_connected.peer_id.is_none()
             && now.duration_since(peer_connected.non_authenticated_instant) >= Duration::from_secs(120)
             {
@@ -348,33 +348,33 @@ impl ServerPortTrait for UdpServerPort {
         HashMap::new()
     }
 
-    fn authenticate_peer(&mut self, current_season_uuid: Uuid, new_peer_id: Uuid, new_season_uuid: Option<Uuid>) {
-        if let Some(peer_connected) = self.peers_connected.get_mut(&current_season_uuid) {
+    fn authenticate_peer(&mut self, current_session_uuid: Uuid, new_peer_id: Uuid, new_session_uuid: Option<Uuid>) {
+        if let Some(peer_connected) = self.peers_connected.get_mut(&current_session_uuid) {
             peer_connected.peer_id = Some(new_peer_id);
 
-            if let Some(new_season_uuid) = new_season_uuid {
-                let peer_connected = self.peers_connected.remove(&current_season_uuid).unwrap();
+            if let Some(new_session_uuid) = new_session_uuid {
+                let peer_connected = self.peers_connected.remove(&current_session_uuid).unwrap();
 
-                self.peers_connected.insert(new_season_uuid, peer_connected);
-                self.peer_uuid_to_season_uuid.insert(new_peer_id, new_season_uuid);
+                self.peers_connected.insert(new_session_uuid, peer_connected);
+                self.peer_uuid_to_session_uuid.insert(new_peer_id, new_session_uuid);
             } else {
-                self.peer_uuid_to_season_uuid.insert(new_peer_id, current_season_uuid);
+                self.peer_uuid_to_session_uuid.insert(new_peer_id, current_session_uuid);
             }
         }
     }
 
-    fn is_season_authenticated(&self, season_uuid: &Uuid) -> bool {
-        if let Some(peer_connected) = self.peers_connected.get(season_uuid) {
+    fn is_session_authenticated(&self, session_uuid: &Uuid) -> bool {
+        if let Some(peer_connected) = self.peers_connected.get(session_uuid) {
             return peer_connected.peer_id.is_some()
         }
 
         false
     }
 
-    fn ping(&mut self, season_uuid: &Uuid, network_port_shared_infos: &dyn Any) {
+    fn ping(&mut self, session_uuid: &Uuid, network_port_shared_infos: &dyn Any) {
         let instant = Instant::now();
 
-        if let Some(peer_connected) =self.peers_connected.get_mut(season_uuid)
+        if let Some(peer_connected) =self.peers_connected.get_mut(session_uuid)
             && instant.duration_since(peer_connected.last_ping_instant) >= Duration::from_secs(10)
             && let Some(default_network_port_shared_infos) = network_port_shared_infos.downcast_ref::<DefaultNetworkPortSharedInfosServer>()
             && let Some(runtime) = &default_network_port_shared_infos.get_runtime()
@@ -399,9 +399,9 @@ impl ServerPortTrait for UdpServerPort {
         }
     }
 
-    fn pong(&mut self, season_uuid: &Uuid, bytes: &[u8], _network_port_shared_infos: Option<&dyn Any>) {
+    fn pong(&mut self, session_uuid: &Uuid, bytes: &[u8], _network_port_shared_infos: Option<&dyn Any>) {
         if let Ok(msg) = postcard::from_bytes::<String>(bytes)
-        && msg == "ping" && let Some(peer_connected) = self.peers_connected.get_mut(season_uuid)
+        && msg == "ping" && let Some(peer_connected) = self.peers_connected.get_mut(session_uuid)
         {
             peer_connected.last_pong_instant = Instant::now();
         }

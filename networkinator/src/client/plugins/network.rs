@@ -3,7 +3,7 @@ use bevy::app::App;
 use bevy::prelude::{error, First, IntoScheduleConfigs, Message, MessageWriter, Plugin};
 use crate::{NetRes, NetResMut};
 use crate::shared::plugins::messaging::MessagingPlugin;
-use crate::shared::plugins::network::{ClientConnection, CurrentNetworkSides, LocalSeasonUUID, NetworkConnection, NetworkType, ServerConnection};
+use crate::shared::plugins::network::{ClientConnection, CurrentNetworkSides, LocalSessionUUID, NetworkConnection, NetworkType, ServerConnection};
 
 pub struct ClientNetworkPlugin;
 
@@ -121,19 +121,19 @@ pub fn start_listening_ports(
 
 pub fn ping_ports(
     mut network_connection: NetResMut<NetworkConnection<ClientConnection>>,
-    local_season_uuid: NetRes<LocalSeasonUUID>,
+    local_session_uuid: NetRes<LocalSessionUUID>,
 ){
-    if let Some(local_season_uuid) = local_season_uuid.get_season_uuid() {
+    if let Some(local_session_uuid) = local_session_uuid.get_session_uuid() {
         for (_,client_connection) in &mut network_connection.0.iter_mut() {
             if let (Some(main_port), network_port_shared_infos) = client_connection.get_port_split(0) && let Some(network_port_shared_infos) = network_port_shared_infos {
-                main_port.ping(local_season_uuid, network_port_shared_infos);
+                main_port.ping(local_session_uuid, network_port_shared_infos);
             }
 
             let ports_amount = client_connection.get_ports_amount();
 
             for port_id in 1..=ports_amount {
                 if let (Some(port), network_port_shared_infos) = client_connection.get_port_split(port_id) && let Some(network_port_shared_infos) = network_port_shared_infos {
-                    port.ping(local_season_uuid, network_port_shared_infos);
+                    port.ping(local_session_uuid, network_port_shared_infos);
                 }
             }
         }

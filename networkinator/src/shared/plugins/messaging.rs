@@ -104,11 +104,11 @@ impl<'w> ServerConnectionParams<'w> {
 }
 
 impl<'w> ClientConnectionParams<'w> {
-    pub fn send_message<T: MessageTrait>(&mut self, connection_id: u32, port_id: u32, message: &dyn MessageTrait, local_season_uuid: Option<Uuid>, send_args: Option<Box<dyn Any>>){
+    pub fn send_message<T: MessageTrait>(&mut self, connection_id: u32, port_id: u32, message: &dyn MessageTrait, local_session_uuid: Option<Uuid>, send_args: Option<Box<dyn Any>>){
         let type_id = TypeId::of::<T>();
 
         if let Some(message_id) = self.messages_registry.2.get(&type_id) {
-            self.connection.send_message_to_server(*message_id, connection_id, port_id, message, local_season_uuid, send_args);
+            self.connection.send_message_to_server(*message_id, connection_id, port_id, message, local_session_uuid, send_args);
         }
     }
 
@@ -254,9 +254,9 @@ fn check_messages_from_client(
 ){
     for (connection_id,connection) in network_connection.0.iter_mut(){
         if let Some(main_port) = connection.get_port(0){
-            for (season_uuid, (messages, peer_uuid)) in main_port.get_peers_messages() {
+            for (session_uuid, (messages, peer_uuid)) in main_port.get_peers_messages() {
                 for bytes in messages {
-                    main_port.pong(&season_uuid, &bytes, None);
+                    main_port.pong(&session_uuid, &bytes, None);
 
                     if let Some(message_infos) = main_port.deserialize_message_infos(bytes) && let Some(registry) = messages_registry_server.1.get(&message_infos.message_id) {
                         let message = (registry.deserialize)(&message_infos.message);
@@ -264,7 +264,7 @@ fn check_messages_from_client(
                         let connection_id = *connection_id;
 
                         commands.queue(move |world: &mut World| {
-                            dispatch(world, message, connection_id, 0, peer_uuid, season_uuid);
+                            dispatch(world, message, connection_id, 0, peer_uuid, session_uuid);
                         })
                     }
                 }
@@ -272,9 +272,9 @@ fn check_messages_from_client(
         }
 
         for (port_id,port) in connection.get_secondary_ports().iter_mut() {
-            for (season_uuid, (messages, peer_uuid)) in port.get_peers_messages() {
+            for (session_uuid, (messages, peer_uuid)) in port.get_peers_messages() {
                 for bytes in messages {
-                    port.pong(&season_uuid, &bytes, None);
+                    port.pong(&session_uuid, &bytes, None);
 
                     if let Some(message_infos) = port.deserialize_message_infos(bytes) && let Some(registry) = messages_registry_server.1.get(&message_infos.message_id) {
                         let message = (registry.deserialize)(&message_infos.message);
@@ -283,7 +283,7 @@ fn check_messages_from_client(
                         let port_id = *port_id;
 
                         commands.queue(move |world: &mut World| {
-                            dispatch(world, message, connection_id, port_id, peer_uuid, season_uuid);
+                            dispatch(world, message, connection_id, port_id, peer_uuid, session_uuid);
                         })
                     }
                 }

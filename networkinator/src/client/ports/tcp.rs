@@ -225,7 +225,7 @@ impl ClientPortTrait for TcpClientPort{
         true
     }
 
-    fn send_message_for_server(&mut self, message_id: u32, network_port_shared_infos: &dyn Any, message: &dyn MessageTrait, _local_season_uuid: Option<Uuid>, _send_args: Option<Box<dyn Any>>) {
+    fn send_message_for_server(&mut self, message_id: u32, network_port_shared_infos: &dyn Any, message: &dyn MessageTrait, _local_session_uuid: Option<Uuid>, _send_args: Option<Box<dyn Any>>) {
         if let Some(default_network_port_shared_infos) = network_port_shared_infos.downcast_ref::<DefaultNetworkPortSharedInfosClient>()
         && let Some(runtime) = &default_network_port_shared_infos.get_runtime()
         && let Some(owned_write_half) = &self.owned_write_half

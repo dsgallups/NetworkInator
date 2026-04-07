@@ -27,7 +27,7 @@ pub enum NetworkType{
 }
 
 #[derive(Resource,Default)]
-pub struct LocalSeasonUUID(pub(crate) Option<Uuid>);
+pub struct LocalSessionUUID(pub(crate) Option<Uuid>);
 
 #[cfg(target_arch = "wasm32")]
 pub trait ServerPortTrait{
@@ -40,8 +40,8 @@ pub trait ServerPortTrait{
     fn as_main_port(&mut self) -> bool;
     fn send_message_to_peer(&mut self, message_id: u32, peer_id: Uuid, network_port_shared_infos: &dyn Any, message: &dyn MessageTrait, send_args: Option<Box<dyn Any>>);
     fn is_main_port(&self) -> bool;
-    fn get_anonymous_seasons(&self) -> Vec<Uuid>;
-    fn get_authenticated_seasons(&self) -> Vec<(Uuid,Uuid)>;
+    fn get_anonymous_sessions(&self) -> Vec<Uuid>;
+    fn get_authenticated_sessions(&self) -> Vec<(Uuid,Uuid)>;
 
     fn deserialize_message_infos(&self, vec: Vec<u8>) -> Option<MessageInfos> {
         from_bytes::<MessageInfos>(&vec).ok()
@@ -63,15 +63,15 @@ pub trait ServerPortTrait{
 
     }
 
-    fn authenticate_peer(&mut self, _current_season_uuid: Uuid, _new_peer_id: Uuid, _new_season_uuid: Option<Uuid>) {
+    fn authenticate_peer(&mut self, _current_session_uuid: Uuid, _new_peer_id: Uuid, _new_session_uuid: Option<Uuid>) {
 
     }
 
-    fn is_season_authenticated(&self, _season_uuid: &Uuid) -> bool {
+    fn is_session_authenticated(&self, _session_uuid: &Uuid) -> bool {
         true
     }
 
-    fn get_peer_uuid_from_season(&self, _season_uuid: &Uuid) -> Option<&Uuid> {
+    fn get_peer_uuid_from_session(&self, _session_uuid: &Uuid) -> Option<&Uuid> {
         None
     }
 
@@ -87,15 +87,15 @@ pub trait ServerPortTrait{
         None
     }
 
-    fn disconnect_peer_or_season(&mut self, _uuid: &Uuid) {
+    fn disconnect_peer_or_session(&mut self, _uuid: &Uuid) {
 
     }
 
-    fn ping(&mut self, _season_uuid: &Uuid, _network_port_shared_infos: &dyn Any) {
+    fn ping(&mut self, _session_uuid: &Uuid, _network_port_shared_infos: &dyn Any) {
 
     }
 
-    fn pong(&mut self, _season_uuid: &Uuid, _bytes: &[u8], _network_port_shared_infos: Option<&dyn Any>) {
+    fn pong(&mut self, _session_uuid: &Uuid, _bytes: &[u8], _network_port_shared_infos: Option<&dyn Any>) {
 
     }
 }
@@ -111,8 +111,8 @@ pub trait ServerPortTrait: Send + Sync{
     fn as_main_port(&mut self) -> bool;
     fn send_message_to_peer(&mut self, message_id: u32, peer_id: Uuid, network_port_shared_infos: &dyn Any, message: &dyn MessageTrait, send_args: Option<Box<dyn Any>>);
     fn is_main_port(&self) -> bool;
-    fn get_anonymous_seasons(&self) -> Vec<Uuid>;
-    fn get_authenticated_seasons(&self) -> Vec<(Uuid,Uuid)>;
+    fn get_anonymous_sessions(&self) -> Vec<Uuid>;
+    fn get_authenticated_sessions(&self) -> Vec<(Uuid,Uuid)>;
 
     fn deserialize_message_infos(&self, vec: Vec<u8>) -> Option<MessageInfos> {
         from_bytes::<MessageInfos>(&vec).ok()
@@ -134,15 +134,15 @@ pub trait ServerPortTrait: Send + Sync{
 
     }
 
-    fn authenticate_peer(&mut self, _current_season_uuid: Uuid, _new_peer_id: Uuid, _new_season_uuid: Option<Uuid>) {
+    fn authenticate_peer(&mut self, _current_session_uuid: Uuid, _new_peer_id: Uuid, _new_session_uuid: Option<Uuid>) {
 
     }
 
-    fn is_season_authenticated(&self, _season_uuid: &Uuid) -> bool {
+    fn is_session_authenticated(&self, _session_uuid: &Uuid) -> bool {
         true
     }
 
-    fn get_peer_uuid_from_season(&self, _season_uuid: &Uuid) -> Option<&Uuid> {
+    fn get_peer_uuid_from_session(&self, _session_uuid: &Uuid) -> Option<&Uuid> {
         None
     }
 
@@ -158,15 +158,15 @@ pub trait ServerPortTrait: Send + Sync{
         None
     }
 
-    fn disconnect_peer_or_season(&mut self, _uuid: &Uuid) {
+    fn disconnect_peer_or_session(&mut self, _uuid: &Uuid) {
 
     }
 
-    fn ping(&mut self, _season_uuid: &Uuid, _network_port_shared_infos: &dyn Any) {
+    fn ping(&mut self, _session_uuid: &Uuid, _network_port_shared_infos: &dyn Any) {
 
     }
 
-    fn pong(&mut self, _season_uuid: &Uuid, _bytes: &[u8], _network_port_shared_infos: Option<&dyn Any>) {
+    fn pong(&mut self, _session_uuid: &Uuid, _bytes: &[u8], _network_port_shared_infos: Option<&dyn Any>) {
 
     }
 }
@@ -180,7 +180,7 @@ pub trait ClientPortTrait {
     fn get_server_messages(&mut self) -> Vec<Vec<u8>>;
     fn get_port_reliability(&mut self) -> &PortReliability;
     fn as_main_port(&mut self) -> bool;
-    fn send_message_for_server(&mut self, message_id: u32, network_port_shared_infos: &dyn Any, message: &dyn MessageTrait, local_season_uuid: Option<Uuid>, send_args: Option<Box<dyn Any>>);
+    fn send_message_for_server(&mut self, message_id: u32, network_port_shared_infos: &dyn Any, message: &dyn MessageTrait, local_session_uuid: Option<Uuid>, send_args: Option<Box<dyn Any>>);
     fn is_main_port(&self) -> bool;
 
     fn deserialize_message_infos(&self, vec: Vec<u8>) -> Option<MessageInfos> {
@@ -207,7 +207,7 @@ pub trait ClientPortTrait {
         true
     }
 
-    fn ping(&mut self, _local_season_uuid: Uuid, _network_port_shared_infos: &dyn Any) {
+    fn ping(&mut self, _local_session_uuid: Uuid, _network_port_shared_infos: &dyn Any) {
 
     }
 
@@ -225,7 +225,7 @@ pub trait ClientPortTrait: Send + Sync{
     fn get_server_messages(&mut self) -> Vec<Vec<u8>>;
     fn get_port_reliability(&mut self) -> &PortReliability;
     fn as_main_port(&mut self) -> bool;
-    fn send_message_for_server(&mut self, message_id: u32, network_port_shared_infos: &dyn Any, message: &dyn MessageTrait, local_season_uuid: Option<Uuid>, send_args: Option<Box<dyn Any>>);
+    fn send_message_for_server(&mut self, message_id: u32, network_port_shared_infos: &dyn Any, message: &dyn MessageTrait, local_session_uuid: Option<Uuid>, send_args: Option<Box<dyn Any>>);
     fn is_main_port(&self) -> bool;
 
     fn deserialize_message_infos(&self, vec: Vec<u8>) -> Option<MessageInfos> {
@@ -252,7 +252,7 @@ pub trait ClientPortTrait: Send + Sync{
         true
     }
 
-    fn ping(&mut self, _local_season_uuid: Uuid, _network_port_shared_infos: &dyn Any) {
+    fn ping(&mut self, _local_session_uuid: Uuid, _network_port_shared_infos: &dyn Any) {
 
     }
 
@@ -482,12 +482,12 @@ impl ServerConnection {
         self.authentication_connection
     }
 
-    pub fn disconnect_peer_or_season(&mut self, uuid: &Uuid){
+    pub fn disconnect_peer_or_session(&mut self, uuid: &Uuid){
         let ports_amount = self.get_ports_amount();
 
         for port_id in 0..=ports_amount {
             if let Some(port) = self.get_port(port_id) {
-                port.disconnect_peer_or_season(uuid);
+                port.disconnect_peer_or_session(uuid);
             }
         }
     }
@@ -636,9 +636,9 @@ impl NetworkConnection<ServerConnection> {
         }
     }
 
-    pub fn disconnect_peer_or_season(&mut self, connection_id: u32, uuid: &Uuid) {
+    pub fn disconnect_peer_or_session(&mut self, connection_id: u32, uuid: &Uuid) {
         if let Some(connection) = self.0.get_mut(&connection_id){
-            connection.disconnect_peer_or_season(uuid);
+            connection.disconnect_peer_or_session(uuid);
         }
     }
 }
@@ -666,9 +666,9 @@ impl NetworkConnection<ClientConnection> {
         }
     }
 
-    pub(crate) fn send_message_to_server(&mut self, message_id: u32, connection_id: u32, port_id: u32, message: &dyn MessageTrait, local_season_uuid: Option<Uuid>, send_args: Option<Box<dyn Any>>) {
+    pub(crate) fn send_message_to_server(&mut self, message_id: u32, connection_id: u32, port_id: u32, message: &dyn MessageTrait, local_session_uuid: Option<Uuid>, send_args: Option<Box<dyn Any>>) {
         if let Some(client_connection) = self.0.get_mut(&connection_id) && let (Some(port),Some(network_port_shared_infos)) = client_connection.get_port_split(port_id) {
-            port.send_message_for_server(message_id, network_port_shared_infos, message, local_season_uuid, send_args);
+            port.send_message_for_server(message_id, network_port_shared_infos, message, local_session_uuid, send_args);
         }
     }
 
@@ -700,8 +700,8 @@ impl CurrentNetworkSides {
     }
 }
 
-impl LocalSeasonUUID {
-    pub fn get_season_uuid(&self) -> Option<Uuid> {
+impl LocalSessionUUID {
+    pub fn get_session_uuid(&self) -> Option<Uuid> {
         self.0
     }
 }

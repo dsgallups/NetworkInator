@@ -293,14 +293,14 @@ impl ServerPortTrait for TcpServerPort{
         let mut messages_list: HashMap<Uuid, (Vec<Vec<u8>>, Option<Uuid>)> = HashMap::new();
         let settings = &self.settings;
 
-        for (season_uuid, peer_connected) in self.peers_connected.iter_mut() {
+        for (session_uuid, peer_connected) in self.peers_connected.iter_mut() {
             let messages = extract_messages_from_buffer(&mut peer_connected.internal_buffer, &settings.bytes, &settings.order);
 
             if messages.is_empty() {
                 continue;
             }
 
-            messages_list.insert(*season_uuid, (messages,peer_connected.peer_id));
+            messages_list.insert(*session_uuid, (messages,peer_connected.peer_id));
         }
 
         messages_list
@@ -362,35 +362,35 @@ impl ServerPortTrait for TcpServerPort{
         self.main_port
     }
 
-    fn get_anonymous_seasons(&self) -> Vec<Uuid> {
-        let mut annoy_anonymous_seasons = Vec::new();
+    fn get_anonymous_sessions(&self) -> Vec<Uuid> {
+        let mut annoy_anonymous_sessions = Vec::new();
 
-        for (season_uuid,peer_connected) in self.peers_connected.iter() {
+        for (session_uuid,peer_connected) in self.peers_connected.iter() {
             if peer_connected.peer_id.is_none(){
-                annoy_anonymous_seasons.push(*season_uuid);
+                annoy_anonymous_sessions.push(*session_uuid);
             }
         }
 
-        annoy_anonymous_seasons
+        annoy_anonymous_sessions
     }
 
-    fn get_authenticated_seasons(&self) -> Vec<(Uuid,Uuid)> {
-        let mut annoy_anonymous_seasons = Vec::new();
+    fn get_authenticated_sessions(&self) -> Vec<(Uuid,Uuid)> {
+        let mut annoy_anonymous_sessions = Vec::new();
 
-        for (season_uuid,peer_connected) in self.peers_connected.iter() {
+        for (session_uuid,peer_connected) in self.peers_connected.iter() {
             if let Some(peer_id) = peer_connected.peer_id {
-                annoy_anonymous_seasons.push((*season_uuid,peer_id));
+                annoy_anonymous_sessions.push((*session_uuid,peer_id));
             }
         }
 
-        annoy_anonymous_seasons
+        annoy_anonymous_sessions
     }
 
     fn get_peers_disconnected(&mut self) -> HashMap<Uuid,(Option<Uuid>, Error)> {
         let mut peers: HashMap<Uuid,(Option<Uuid>, Error)> = HashMap::new();
 
-        while let Ok((season_uuid,peer_id,error)) = self.peer_disconnected_receiver.try_recv() {
-            if let Some(peer_connected) = self.peers_connected.remove(&season_uuid){
+        while let Ok((session_uuid,peer_id,error)) = self.peer_disconnected_receiver.try_recv() {
+            if let Some(peer_connected) = self.peers_connected.remove(&session_uuid){
                 drop(peer_connected);
             }
 
@@ -398,16 +398,16 @@ impl ServerPortTrait for TcpServerPort{
                 self.peers_authenticated.remove(&peer_id);
             }
 
-            peers.insert(season_uuid, (peer_id, error));
+            peers.insert(session_uuid, (peer_id, error));
         }
 
         let now = Instant::now();
 
-        self.peers_connected.retain(|season_uuid, peer_connected| {
+        self.peers_connected.retain(|session_uuid, peer_connected| {
             if peer_connected.peer_id.is_some() { return true }
 
             if now.duration_since(peer_connected.non_authenticated_instant) >= Duration::from_secs(120) {
-                peers.insert(*season_uuid, (peer_connected.peer_id, Error::new(ErrorKind::TimedOut, "Didnt authenticated in time")));
+                peers.insert(*session_uuid, (peer_connected.peer_id, Error::new(ErrorKind::TimedOut, "Didnt authenticated in time")));
                 return false
             };
 
@@ -423,7 +423,7 @@ impl ServerPortTrait for TcpServerPort{
         let hook_stream = &self.settings.hook_stream;
 
         while let Ok((mut tcp_stream,socket_addr,owned_semaphore_permit)) = self.peer_connected_receiver.try_recv() {
-            let season_uuid = Uuid::new_v4();
+            let session_uuid = Uuid::new_v4();
 
             tcp_stream = match hook_stream {
                 Some(hook_stream) => {
@@ -436,7 +436,7 @@ impl ServerPortTrait for TcpServerPort{
 
             let (owned_read_half,owned_write_half) = tcp_stream.into_split();
 
-            peers_connected.insert(season_uuid, PeerConnected{
+            peers_connected.insert(session_uuid, PeerConnected{
                 peer_id: None,
                 owned_semaphore_permit,
                 owned_read_half,
@@ -446,7 +446,7 @@ impl ServerPortTrait for TcpServerPort{
                 non_authenticated_instant: Instant::now()
             });
 
-            peers.push(season_uuid);
+            peers.push(session_uuid);
         }
 
         peers
@@ -455,7 +455,7 @@ impl ServerPortTrait for TcpServerPort{
     fn listen_peers(&mut self, _network_port_shared_infos: &dyn Any) {
         let buffer_size = self.settings.buffer_size;
 
-        for (season_uuid, peer_connected) in self.peers_connected.iter_mut() {
+        for (session_uuid, peer_connected) in self.peers_connected.iter_mut() {
             let mut temp_buf = vec![0u8; buffer_size];
 
             match peer_connected.owned_read_half.try_read(&mut temp_buf) {
@@ -466,7 +466,7 @@ impl ServerPortTrait for TcpServerPort{
                     continue;
                 }
                 Err(e) => {
-                    if let Err(send_error) = self.peer_disconnected_sender.send((*season_uuid,peer_connected.peer_id,e)) {
+                    if let Err(send_error) = self.peer_disconnected_sender.send((*session_uuid,peer_connected.peer_id,e)) {
                         warn!("Failed to send TCP peer port connection_aborted, error: {}", send_error);
                         continue;
                     }
@@ -475,42 +475,42 @@ impl ServerPortTrait for TcpServerPort{
         }
     }
 
-    fn authenticate_peer(&mut self, current_season_uuid: Uuid, new_peer_id: Uuid, new_season_uuid: Option<Uuid>) {
-        if let Some(peer_connected) = self.peers_connected.get_mut(&current_season_uuid) {
+    fn authenticate_peer(&mut self, current_session_uuid: Uuid, new_peer_id: Uuid, new_session_uuid: Option<Uuid>) {
+        if let Some(peer_connected) = self.peers_connected.get_mut(&current_session_uuid) {
             peer_connected.peer_id = Some(new_peer_id);
             
             println!("Peer authenticated");
             
-            if let Some(new_season_uuid) = new_season_uuid{
-                let peer_connected = self.peers_connected.remove(&current_season_uuid).unwrap();
+            if let Some(new_session_uuid) = new_session_uuid{
+                let peer_connected = self.peers_connected.remove(&current_session_uuid).unwrap();
 
-                self.peers_connected.insert(new_season_uuid,peer_connected);
-                self.peers_authenticated.insert(new_peer_id,new_season_uuid);
+                self.peers_connected.insert(new_session_uuid,peer_connected);
+                self.peers_authenticated.insert(new_peer_id,new_session_uuid);
             }else{
-                self.peers_authenticated.insert(new_peer_id,current_season_uuid);
+                self.peers_authenticated.insert(new_peer_id,current_session_uuid);
             }
         }
     }
 
-    fn is_season_authenticated(&self, season_uuid: &Uuid) -> bool {
-        if let Some(peer_connected) = self.peers_connected.get(season_uuid) {
+    fn is_session_authenticated(&self, session_uuid: &Uuid) -> bool {
+        if let Some(peer_connected) = self.peers_connected.get(session_uuid) {
             return peer_connected.peer_id.is_some()
         }
 
         false
     }
 
-    fn get_peer_uuid_from_season(&self, season_uuid: &Uuid) -> Option<&Uuid> {
-        self.peers_authenticated.get(season_uuid)
+    fn get_peer_uuid_from_session(&self, session_uuid: &Uuid) -> Option<&Uuid> {
+        self.peers_authenticated.get(session_uuid)
     }
 
     fn is_peer_connected(&self, peer_uuid: &Uuid) -> bool {
         self.peers_authenticated.contains_key(peer_uuid)
     }
 
-    fn disconnect_peer_or_season(&mut self, uuid: &Uuid) {
-        if let Some(season_uuid) = self.peers_authenticated.get(uuid) {
-            if let Some(peer_connected) = self.peers_connected.remove(season_uuid) {
+    fn disconnect_peer_or_session(&mut self, uuid: &Uuid) {
+        if let Some(session_uuid) = self.peers_authenticated.get(uuid) {
+            if let Some(peer_connected) = self.peers_connected.remove(session_uuid) {
                 drop(peer_connected);
             }
         }else if let Some(peer_connected) = self.peers_connected.remove(uuid) {

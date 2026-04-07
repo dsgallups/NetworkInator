@@ -8,7 +8,7 @@ use networkinator::client::ports::udp::UdpClientSettings;
 use networkinator::{NetRes, NetResMut};
 use networkinator::client::plugins::network::ClientNetworkPlugin;
 use networkinator::shared::plugins::authentication::{AuthenticationPlugin, ClientPortAuthenticated};
-use networkinator::shared::plugins::network::{ClientConnection, DefaultNetworkPortSharedInfosClient, LocalSeasonUUID, NetworkConnection, NetworkPlugin};
+use networkinator::shared::plugins::network::{ClientConnection, DefaultNetworkPortSharedInfosClient, LocalSessionUUID, NetworkConnection, NetworkPlugin};
 
 #[derive(Serialize,Deserialize,ConnectionMessage)]
 pub struct HiMessage(String);
@@ -23,10 +23,10 @@ fn start_connection(
 fn send_hi_message(
     mut client_port_authenticated: MessageReader<ClientPortAuthenticated>,
     mut client_connection_params: ClientConnectionParams,
-    local_season_uuid: NetRes<LocalSeasonUUID>,
+    local_session_uuid: NetRes<LocalSessionUUID>,
 ){
     for event in client_port_authenticated.read() {
-        client_connection_params.send_message::<HiMessage>(event.connection_id, event.port_id, &HiMessage("Hi server".parse().unwrap()), local_season_uuid.get_season_uuid(), None);
+        client_connection_params.send_message::<HiMessage>(event.connection_id, event.port_id, &HiMessage("Hi server".parse().unwrap()), local_session_uuid.get_session_uuid(), None);
     }
 }
 
