@@ -3,7 +3,7 @@ resolver = "3"
 members = ["examples/dedicated_server/client_dedicated_test", "examples/dedicated_server/server_dedicated_test", "examples/local_server", "message_pro_macro", "networkinator"]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.1.1"
 authors = ["TenerPVP"]
 edition = "2024"
 publish = true
